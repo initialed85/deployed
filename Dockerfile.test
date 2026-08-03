@@ -1,0 +1,23 @@
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y \
+    openssh-server sudo \
+    curl
+
+RUN useradd -m -s /bin/bash user1
+RUN echo "user1:Password1" | chpasswd
+
+RUN useradd -m -s /bin/bash user2
+RUN echo "user2:Password2" | chpasswd
+RUN usermod -aG sudo user2
+
+RUN useradd -m -s /bin/bash user3
+RUN echo "user3:Password3" | chpasswd
+RUN usermod -aG sudo user3
+RUN echo 'user3 ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers.d/nopasswd-users
+
+ENTRYPOINT ["/usr/sbin/sshd"]
+CMD ["-4", "-D", "-p", "2222", "-e", "-o", "LogLevel=INFO"]

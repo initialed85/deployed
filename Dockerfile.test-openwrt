@@ -1,0 +1,11 @@
+FROM --platform=linux/aarch64_cortex-a53 openwrt/rootfs:armvirt-64-21.02-SNAPSHOT
+
+RUN echo -e 'Password9\nPassword9\n' | passwd root
+
+RUN mkdir -p /var/lock
+
+RUN /etc/init.d/dropbear start || true
+RUN /etc/init.d/dropbear stop || true
+
+ENTRYPOINT ["/usr/sbin/dropbear"]
+CMD ["-F", "-P", "/var/run/dropbear.1.pid", "-p", "22", "-I", "1800", "-K", "300", "-T", "3", "-E"]

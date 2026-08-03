@@ -1,0 +1,40 @@
+services:
+  ubuntu-ssh-server-2221:
+    build:
+      dockerfile: ./Dockerfile.test
+      context: .
+    image: ubuntu-ssh-server:latest
+    ports:
+      - 2221:22
+
+  ubuntu-ssh-server-2222:
+    build:
+      dockerfile: ./Dockerfile.test
+      context: .
+    image: ubuntu-ssh-server:latest
+    ports:
+      - 2222:22
+
+  ubuntu-ssh-server-2223:
+    build:
+      dockerfile: ./Dockerfile.test
+      context: .
+    image: ubuntu-ssh-server:latest
+    ports:
+      - 2223:22
+
+  ubuntu-ssh-server-2224:
+    build:
+      dockerfile: ./Dockerfile.test
+      context: .
+    image: ubuntu-ssh-server:latest
+    ports:
+      - 2224:22
+
+  openwrt-router-2229:
+    build:
+      dockerfile: ./Dockerfile.test-openwrt
+      context: .
+    image: openwrt-router:latest
+    ports:
+      - 2229:22

@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -e
+
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${@}
