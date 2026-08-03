@@ -33,6 +33,27 @@ NODES = {
   "node4" => 12224,
 }
 
+# The bento/ubuntu-26.04 box is UEFI-only: GPT disk with an EFI System
+# Partition and no BIOS boot partition.  libvirt must boot it with OVMF
+# (or AAVMF on arm64) instead of the default SeaBIOS, otherwise the
+# firmware can't find a bootloader and the vCPU spins at 100% forever.
+# Search the common install paths across distros.
+UEFI_CODE_CANDIDATES = {
+  "amd64" => %w[
+    /usr/share/edk2/x64/OVMF_CODE.4m.fd
+    /usr/share/edk2/ovmf/OVMF_CODE.fd
+    /usr/share/OVMF/OVMF_CODE.fd
+    /usr/share/OVMF/OVMF_CODE_4M.fd
+  ],
+  "arm64" => %w[
+    /usr/share/AAVMF/AAVMF_CODE.fd
+    /usr/share/AAVMF/AAVMF_CODE_4M.fd
+    /usr/share/edk2/aarch64/QEMU_EFI.fd
+    /usr/share/edk2/aarch64/QEMU_EFI_4M.fd
+  ],
+}
+UEFI_CODE = (UEFI_CODE_CANDIDATES[HOST_ARCH] || []).find { |p| File.exist?(p) }
+
 PROVISION_SCRIPT = <<~SHELL
   set -eux
   export DEBIAN_FRONTEND=noninteractive
@@ -89,6 +110,21 @@ Vagrant.configure("2") do |config|
       end
 
       node.vm.provider "libvirt" do |lv|
+        # Force KVM when the host has it; the bento box ships `driver = "qemu"`
+        # in its own Vagrantfile so it runs in CI/containers without /dev/kvm.
+        # On a real Linux host that drops us into TCG (pure software emulation),
+        # pinning every QEMU process at 100% and making the boot never finish.
+        # Override it here so KVM is used wherever /dev/kvm is available.
+        if File.exist?("/dev/kvm")
+          lv.driver = "kvm"
+        end
+        # Boot via UEFI (OVMF/AAVMF) — see UEFI_CODE above.  libvirt
+        # auto-creates the per-domain NVRAM store from the firmware
+        # metadata's nvram-template on first start.
+        if UEFI_CODE
+          lv.loader = UEFI_CODE
+          lv.nvram  = "/var/lib/libvirt/qemu/nvram/#{name}_VARS.fd"
+        end
         lv.memory = 1024
         lv.cpus   = 1
       end

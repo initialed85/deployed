@@ -1,11 +1,11 @@
 #!/bin/bash
-# env.sh - platform-aware wrapper around the Vagrantfile.
+# env.sh - platform-aware wrapper around docker compose + the Vagrantfile.
 #
 # Usage:
-#   ./env.sh up                  bring up all nodes (auto-detected provider)
-#   ./env.sh up node2            bring up a single node
-#   ./env.sh down                halt all nodes
-#   ./env.sh down node2          halt a single node
+#   ./env.sh up                  docker compose up --build, then all nodes
+#   ./env.sh up node2            docker compose up --build, then a single node
+#   ./env.sh down                halt all nodes, then docker compose down
+#   ./env.sh down node2          halt a single node (leaves docker compose up)
 #   ./env.sh destroy             destroy all nodes (and their disks)
 #   ./env.sh status              show vagrant status
 #   ./env.sh provision           re-run the provisioner on all nodes
@@ -167,10 +167,44 @@ require_vagrant() {
 	}
 }
 
+require_docker() {
+	command -v docker >/dev/null 2>&1 || {
+		echo "env.sh: 'docker' not found on PATH. Install Docker first:" >&2
+		echo "  https://docs.docker.com/get-docker/" >&2
+		exit 1
+	}
+}
+
+# docker compose is only invoked when a compose file is present in the
+# project root.  This keeps env.sh usable in repos that are vagrant-only.
+compose_file() {
+	for f in docker-compose.yaml docker-compose.yml compose.yaml compose.yml; do
+		[[ -f "$f" ]] && { echo "$f"; return 0; }
+	done
+	return 1
+}
+
+compose_up() {
+	local cf
+	cf="$(compose_file)" || return 0
+	require_docker
+	echo "env.sh: docker compose up --build (detached)"
+	docker compose -f "$cf" up -d --build
+}
+
+compose_down() {
+	local cf
+	cf="$(compose_file)" || return 0
+	require_docker
+	echo "env.sh: docker compose down --volumes --remove-orphans"
+	docker compose -f "$cf" down --volumes --remove-orphans
+}
+
 # --- commands --------------------------------------------------------------
 
 cmd_up() {
 	require_vagrant
+	compose_up
 	echo "env.sh: bringing up nodes on $platform/$arch via provider=${provider:-<default>}"
 	vagrant_up "$@"
 }
@@ -178,6 +212,12 @@ cmd_up() {
 cmd_down() {
 	require_vagrant
 	vagrant halt "$@"
+	# Only tear down docker compose when halting everything.  A single-node
+	# down (e.g. `down node2`) leaves the compose services running so the
+	# rest of the test harness stays available.
+	if [[ $# -eq 0 ]]; then
+		compose_down
+	fi
 }
 
 cmd_destroy() {

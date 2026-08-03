@@ -25,11 +25,18 @@ A simple way to provision software on Linux servers, via SSH.
 
 ## Dev notes
 
+There's some one-time setup stuff you'll need:
+
+- Docker and Docker Compose
+- binfmt (possibly only if you're on an AMD64 platform)
+  - `docker run --privileged --rm tonistiigi/binfmt --install all`
+- Vagrant
+- libvirt
+
 ```shell
 # shell 1
-docker compose up --build ; docker compose down --volumes --remove-orphans
+./env.sh up
 
 # shell 2
-limactl create --cpus=1 --memory=2 --name ubuntu-1 --ssh-port 12221 --tty=false
-limactl start ubuntu-1
+find . -type f -name '*.go' | entr -n -r -cc -s "go test -v -count=1 ./pkg/ssh ./pkg/deploy"
 ```
