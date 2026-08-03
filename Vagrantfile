@@ -125,6 +125,12 @@ Vagrant.configure("2") do |config|
           lv.loader = UEFI_CODE
           lv.nvram  = "/var/lib/libvirt/qemu/nvram/#{name}_VARS.fd"
         end
+        # vagrant-libvirt reaches the guest via its 192.168.121.x IP for
+        # `vagrant ssh`, so it skips forwarding the `id: "ssh"` port by
+        # default (see forward_ports.rb).  That breaks the localhost:1222x
+        # contract the rest of the harness (and macOS/other providers)
+        # rely on.  Opt back in so libvirt matches the localhost+port model.
+        lv.forward_ssh_port = true
         lv.memory = 1024
         lv.cpus   = 1
       end
