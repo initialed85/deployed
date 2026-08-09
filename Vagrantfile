@@ -29,6 +29,8 @@ HOST_ARCH = case RbConfig::CONFIG["host_cpu"]
               `uname -m`.strip
             end
 
+MACOS = !!(RbConfig::CONFIG["host_os"] =~ /darwin/)
+
 BOX        = "bento/ubuntu-26.04"
 BOX_ARCH   = HOST_ARCH
 NODES = {
@@ -87,11 +89,28 @@ PROVISION_SCRIPT = <<~SHELL
   sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
   systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
 
+  # --- static private-network address -------------------------------------
+  # Every provider except qemu configures the private_network NIC itself.  The
+  # qemu provider does it with a cloud-init seed, and this box ships cloud-init
+  # disabled (marker file + datasource_list None), so the NIC would otherwise
+  # sit on vmnet's DHCP pool instead of its static IP.  Pin it ourselves when
+  # it isn't already set; the management NIC is the qemu user-mode NAT
+  # (10.0.2.x), so the private NIC is whatever else is there.
+  idx="$(hostname | sed 's/^node//')"
+  want="192.168.56.1${idx}"
+  if ! ip -4 -o addr show | grep -q "inet ${want}/"; then
+    nat="$(ip -4 -o addr show | awk '$4 ~ /^10\\.0\\.2\\./ { print $2; exit }')"
+    dev="$(ls /sys/class/net | grep -vE "^(lo|${nat})$" | head -1)"
+    printf 'network:\\n  version: 2\\n  ethernets:\\n    %s:\\n      dhcp4: false\\n      addresses: [%s/24]\\n' \\
+      "${dev}" "${want}" >/etc/netplan/60-private-network.yaml
+    chmod 600 /etc/netplan/60-private-network.yaml
+    netplan apply
+  fi
+
   # --- deterministic inter-node name resolution ---------------------------
   # Point our own hostname at our private-network IP (bento maps it to
   # 127.0.1.1, which breaks anything that advertises its own hostname),
   # then add /etc/hosts entries for every other node.
-  idx="$(hostname | sed 's/^node//')"
   sed -i "s/^127\\.0\\.1\\.1 .*/192.168.56.1${idx} $(hostname)/" /etc/hosts
   for i in 1 2 3 4; do
     if [ "$i" != "$idx" ]; then
@@ -122,8 +141,8 @@ Vagrant.configure("2") do |config|
                       auto_correct: false
 
       # Static private network so the nodes can talk to each other at
-      # deterministic IPs (works on libvirt, virtualbox and parallels; the
-      # qemu provider only supports forwarded ports).
+      # deterministic IPs (libvirt, virtualbox and parallels wire this up
+      # natively; the qemu provider needs the advanced_network opt-in below).
       node.vm.network "private_network", ip: cfg[:private_ip]
 
       node.vm.provider "virtualbox" do |vb|
@@ -171,6 +190,19 @@ Vagrant.configure("2") do |config|
         q.ssh_port = cfg[:ssh_port]
         q.memory   = 1024
         q.cpus     = 1
+
+        # Without this the plugin silently drops the private_network above and
+        # the nodes only get the user-mode NAT NIC, so nothing can reach them
+        # at 192.168.56.x.  Opting in gives a second NIC; NIC 0 stays user-mode
+        # so the localhost:1222x forwards are unaffected.  The plugin would
+        # normally assign the static IP via a cloud-init seed, but this box
+        # ships cloud-init disabled, so PROVISION_SCRIPT does it instead.  On
+        # macOS the NIC is backed by the socket_vmnet daemon, which holds the
+        # root vmnet.framework membership so QEMU itself stays unprivileged --
+        # see the README for the one-time daemon setup, which has to use
+        # --vmnet-gateway=192.168.56.1 to match these IPs.
+        q.advanced_network = true
+        q.net_mode = :socket_vmnet if MACOS
       end
 
       node.vm.provision "shell", inline: PROVISION_SCRIPT

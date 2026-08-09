@@ -38,7 +38,53 @@ There's some one-time setup stuff you'll need:
 - binfmt (possibly only if you're on an AMD64 platform)
   - `docker run --privileged --rm tonistiigi/binfmt --install all`
 - Vagrant
-- libvirt
+- libvirt (Linux)
+- socket_vmnet (macOS) — the qemu provider can't do the `192.168.56.x` private
+  network on its own, and that's what the `pkg/deploy` tests target
+  - `brew install socket_vmnet`
+  - It has to run as root, in `shared` mode (`host` mode doesn't pass
+    host-to-guest traffic), pinned to our gateway (Homebrew's default is
+    `192.168.105.1`) with DHCP stopping below the static IPs:
+
+```shell
+sudo mkdir -p /opt/homebrew/var/log/socket_vmnet
+
+sudo tee /Library/LaunchDaemons/io.github.lima-vm.socket_vmnet.plist >/dev/null <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>Label</key>
+		<string>io.github.lima-vm.socket_vmnet</string>
+		<key>Program</key>
+		<string>/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet</string>
+		<key>ProgramArguments</key>
+		<array>
+			<string>/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet</string>
+			<string>--vmnet-mode=shared</string>
+			<string>--vmnet-gateway=192.168.56.1</string>
+			<string>--vmnet-dhcp-end=192.168.56.10</string>
+			<string>--vmnet-mask=255.255.255.0</string>
+			<string>/opt/homebrew/var/run/socket_vmnet</string>
+		</array>
+		<key>StandardErrorPath</key>
+		<string>/opt/homebrew/var/log/socket_vmnet/stderr</string>
+		<key>StandardOutPath</key>
+		<string>/opt/homebrew/var/log/socket_vmnet/stdout</string>
+		<key>RunAtLoad</key>
+		<true />
+		<key>KeepAlive</key>
+		<true />
+		<key>UserName</key>
+		<string>root</string>
+		<key>ProcessType</key>
+		<string>Interactive</string>
+	</dict>
+</plist>
+EOF
+
+sudo launchctl bootstrap system /Library/LaunchDaemons/io.github.lima-vm.socket_vmnet.plist
+```
 
 ```shell
 ./env.sh up

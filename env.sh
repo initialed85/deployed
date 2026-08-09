@@ -299,6 +299,8 @@ vagrant_snapshot() {
 	require_vagrant
 	if [[ "$provider" == "libvirt" ]]; then
 		libvirt_snapshot
+	elif [[ "$provider" == "qemu" ]]; then
+		qemu_snapshot
 	else
 		echo "env.sh: vagrant snapshot save $VAGRANT_SNAPSHOT_NAME"
 		vagrant snapshot delete "$VAGRANT_SNAPSHOT_NAME" >/dev/null 2>&1 || true
@@ -310,6 +312,8 @@ vagrant_restore() {
 	require_vagrant
 	if [[ "$provider" == "libvirt" ]]; then
 		libvirt_restore
+	elif [[ "$provider" == "qemu" ]]; then
+		qemu_restore
 	else
 		echo "env.sh: vagrant snapshot restore $VAGRANT_SNAPSHOT_NAME"
 		vagrant snapshot restore "$VAGRANT_SNAPSHOT_NAME"
@@ -407,6 +411,78 @@ libvirt_restore() {
 	echo "env.sh: vagrant restored ($restored VM(s)) from $snapdir/"
 }
 
+# vagrant-qemu has no snapshot capability of its own, and the UEFI box rules
+# out QEMU's savevm/loadvm (its writable pflash device can't be snapshotted),
+# so we snapshot the qcow2 box disks directly.  qemu-img needs an exclusive
+# write lock, so the VMs are halted around it.  The snapshot lives inside the
+# qcow2 as an internal snapshot named $VAGRANT_SNAPSHOT_NAME -- that is the
+# state, so there is nothing to track in $VAGRANT_SNAPSHOT_DIR.  Disk only, no
+# RAM: a restore reboots the guest, same as `vagrant snapshot` on VirtualBox.
+qemu_disks() {
+	[[ -d .vagrant/machines ]] || return 0
+	find .vagrant/machines -type f -path '*/qemu/*' -name 'linked-box*.img' 2>/dev/null | sort
+}
+
+qemu_snapshotted_disks() {
+	local disk
+	while IFS= read -r disk; do
+		[[ -n "$disk" ]] || continue
+		if qemu-img snapshot -l -U "$disk" 2>/dev/null |
+			awk -v n="$VAGRANT_SNAPSHOT_NAME" '$2 == n { f = 1 } END { exit !f }'; then
+			echo "$disk"
+		fi
+	done < <(qemu_disks)
+}
+
+qemu_snapshot() {
+	local disks disk count
+
+	disks="$(qemu_disks)"
+	if [[ -z "$disks" ]]; then
+		echo "env.sh: no qemu disks to snapshot" >&2
+		return 1
+	fi
+
+	echo "env.sh: vagrant halt (qemu-img needs the disks unlocked)"
+	vagrant halt
+
+	count=0
+	while IFS= read -r disk; do
+		echo "env.sh: qemu-img snapshot -c $VAGRANT_SNAPSHOT_NAME $disk"
+		qemu-img snapshot -d "$VAGRANT_SNAPSHOT_NAME" "$disk" >/dev/null 2>&1 || true
+		qemu-img snapshot -c "$VAGRANT_SNAPSHOT_NAME" "$disk"
+		count=$((count + 1))
+	done <<<"$disks"
+
+	vagrant_up
+
+	echo "env.sh: vagrant snapshot saved ($count disk(s)) -> $VAGRANT_SNAPSHOT_NAME"
+}
+
+qemu_restore() {
+	local disks disk count
+
+	disks="$(qemu_snapshotted_disks)"
+	if [[ -z "$disks" ]]; then
+		echo "env.sh: no vagrant snapshot found ($VAGRANT_SNAPSHOT_NAME)" >&2
+		return 1
+	fi
+
+	echo "env.sh: vagrant halt (qemu-img needs the disks unlocked)"
+	vagrant halt
+
+	count=0
+	while IFS= read -r disk; do
+		echo "env.sh: qemu-img snapshot -a $VAGRANT_SNAPSHOT_NAME $disk"
+		qemu-img snapshot -a "$VAGRANT_SNAPSHOT_NAME" "$disk"
+		count=$((count + 1))
+	done <<<"$disks"
+
+	vagrant_up
+
+	echo "env.sh: vagrant restored ($count disk(s)) from $VAGRANT_SNAPSHOT_NAME"
+}
+
 cmd_snapshot() {
 	compose_snapshot
 	vagrant_snapshot
@@ -431,7 +507,10 @@ up) cmd_up ;;
 down) cmd_down ;;
 snapshot) cmd_snapshot ;;
 restore) cmd_restore ;;
-vagrant) shift; cmd_vagrant "$@" ;;
+vagrant)
+	shift
+	cmd_vagrant "$@"
+	;;
 "" | help | -h | --help) usage ;;
 *)
 	echo "env.sh: unknown command '$sub'" >&2
