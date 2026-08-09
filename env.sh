@@ -163,9 +163,9 @@ compose_down() {
 
 vagrant_up() {
 	if [[ -n "$provider" ]]; then
-		vagrant up --provider="$provider"
+		vagrant up --provider="$provider" "$@"
 	else
-		vagrant up
+		vagrant up "$@"
 	fi
 }
 
@@ -183,7 +183,11 @@ cmd_up() {
 	compose_up
 
 	echo "env.sh: bringing up nodes on $platform/$arch via provider=${provider:-<default>}"
-	vagrant_up
+	if [[ "$provider" == "qemu" ]]; then
+		vagrant_up --parallel
+	else
+		vagrant_up
+	fi
 
 	echo "env.sh: taking initial snapshot"
 	cmd_snapshot
@@ -191,8 +195,13 @@ cmd_up() {
 
 cmd_down() {
 	require_vagrant
-	vagrant destroy -f
+	if [[ "$provider" == "qemu" ]]; then
+		vagrant destroy -f --parallel
+	else
+		vagrant destroy -f
+	fi
 	compose_down
+	compose_cleanup_snapshot_images "$(compose_file)"
 	rm -f "$VAGRANT_SNAPSHOT_DIR"/*.save 2>/dev/null || true
 	rm -f docker-compose.restore.yaml docker-compose.restore.yaml.bak
 }
@@ -222,6 +231,32 @@ vagrant_vm_names() {
 	vagrant status --machine-readable 2>/dev/null |
 		awk -F, '$3 == "provider-name" { print $2 }' |
 		sort -u
+}
+
+vagrant_halt_parallel() {
+	local vm pid failed=0 started=0
+	local pids=()
+
+	while IFS= read -r vm; do
+		[[ -n "$vm" ]] || continue
+		echo "env.sh: vagrant halt $vm"
+		vagrant halt "$vm" &
+		pids+=("$!")
+		started=1
+	done < <(vagrant_vm_names)
+
+	if ((started == 0)); then
+		echo "env.sh: no Vagrant machines to halt" >&2
+		return 1
+	fi
+
+	for pid in "${pids[@]}"; do
+		if ! wait "$pid"; then
+			failed=1
+		fi
+	done
+
+	return "$failed"
 }
 
 libvirt_domain_for() {
@@ -267,12 +302,36 @@ compose_snapshot() {
 		echo "env.sh: no running containers snapshotted; removed restore overlay"
 		rm -f "$bak"
 	else
+		compose_cleanup_snapshot_images "$cf" "$bak"
 		echo "env.sh: docker snapshot saved -> $bak ($committed service(s))"
 	fi
 }
 
+compose_cleanup_snapshot_images() {
+	local cf="$1" overlay="${2:-}" current_images image snapshot_filter
+	local stale_images=()
+	snapshot_filter="label=com.docker.compose.project.working_dir=$PWD"
+
+	if [[ -n "$overlay" ]]; then
+		current_images="$(docker compose -f "$cf" -f "$overlay" config --images)"
+	fi
+
+	while IFS= read -r image; do
+		[[ -n "$image" ]] || continue
+		if [[ -n "$overlay" ]] &&
+			printf '%s\n' "$current_images" | grep -Fqx "$image"; then
+			continue
+		fi
+		stale_images+=("$image")
+	done < <(docker image ls --filter "$snapshot_filter" --format '{{.Repository}}:{{.Tag}}' 'env-restore:snap-*' 2>/dev/null || true)
+
+	if ((${#stale_images[@]} > 0)); then
+		docker image rm "${stale_images[@]}" >/dev/null 2>&1 || true
+	fi
+}
+
 compose_restore() {
-	local cf bak cur
+	local cf bak cur services
 
 	cf="$(compose_file)" || {
 		echo "env.sh: no docker-compose file; skipping containers"
@@ -289,10 +348,12 @@ compose_restore() {
 	fi
 
 	cp -f "$bak" "$cur"
+	services="$(docker compose -f "$cur" config --services)"
 
 	echo "env.sh: docker compose up (no build, from snapshot $cur)"
-	docker compose -f "$cf" -f "$cur" stop -t0 2>/dev/null || true
-	docker compose -f "$cf" -f "$cur" up -d
+	docker compose -f "$cf" -f "$cur" stop -t0 $services 2>/dev/null || true
+	docker compose -f "$cf" -f "$cur" up -d --force-recreate --no-build $services
+	compose_cleanup_snapshot_images "$cf" "$cur"
 }
 
 vagrant_snapshot() {
@@ -341,12 +402,15 @@ libvirt_snapshot() {
 		fi
 		echo "env.sh: virsh save $domain -> $snapdir/${vm}.save"
 		virsh -c "$LIBVIRT_URI" save "$domain" "$snapdir/${vm}.save"
-		disk="$(virsh -c "$LIBVIRT_URI" domblklist "$domain" --details 2>/dev/null |
-			awk '$2 == "disk" { print $NF }')"
-		if [[ -n "$disk" ]]; then
+		while IFS= read -r disk; do
+			[[ -n "$disk" ]] || continue
 			echo "env.sh: qemu-img snapshot -c $VAGRANT_SNAPSHOT_NAME $disk"
+			while sudo qemu-img snapshot -d "$VAGRANT_SNAPSHOT_NAME" "$disk" >/dev/null 2>&1; do
+				:
+			done
 			sudo qemu-img snapshot -c "$VAGRANT_SNAPSHOT_NAME" "$disk"
-		fi
+		done < <(virsh -c "$LIBVIRT_URI" domblklist "$domain" --details 2>/dev/null |
+			awk '$2 == "disk" { print $NF }')
 		echo "env.sh: virsh restore $snapdir/${vm}.save"
 		virsh -c "$LIBVIRT_URI" restore "$snapdir/${vm}.save"
 		saved=$((saved + 1))
@@ -386,12 +450,12 @@ libvirt_restore() {
 		vm="$(basename "$savefile" .save)"
 		domain="$(libvirt_domain_for "$vm")"
 		[[ -n "$domain" ]] || continue
-		disk="$(virsh -c "$LIBVIRT_URI" domblklist "$domain" --details 2>/dev/null |
-			awk '$2 == "disk" { print $NF }')"
-		if [[ -n "$disk" ]]; then
+		while IFS= read -r disk; do
+			[[ -n "$disk" ]] || continue
 			echo "env.sh: qemu-img snapshot -a $VAGRANT_SNAPSHOT_NAME $disk"
 			sudo qemu-img snapshot -a "$VAGRANT_SNAPSHOT_NAME" "$disk"
-		fi
+		done < <(virsh -c "$LIBVIRT_URI" domblklist "$domain" --details 2>/dev/null |
+			awk '$2 == "disk" { print $NF }')
 	done
 
 	restored=0
@@ -427,7 +491,7 @@ qemu_snapshotted_disks() {
 	local disk
 	while IFS= read -r disk; do
 		[[ -n "$disk" ]] || continue
-		if qemu-img snapshot -l -U "$disk" 2>/dev/null |
+		if qemu-img snapshot -l "$disk" 2>/dev/null |
 			awk -v n="$VAGRANT_SNAPSHOT_NAME" '$2 == n { f = 1 } END { exit !f }'; then
 			echo "$disk"
 		fi
@@ -444,32 +508,52 @@ qemu_snapshot() {
 	fi
 
 	echo "env.sh: vagrant halt (qemu-img needs the disks unlocked)"
-	vagrant halt
+	vagrant_halt_parallel
 
 	count=0
 	while IFS= read -r disk; do
 		echo "env.sh: qemu-img snapshot -c $VAGRANT_SNAPSHOT_NAME $disk"
-		qemu-img snapshot -d "$VAGRANT_SNAPSHOT_NAME" "$disk" >/dev/null 2>&1 || true
+		while qemu-img snapshot -d "$VAGRANT_SNAPSHOT_NAME" "$disk" >/dev/null 2>&1; do
+			:
+		done
 		qemu-img snapshot -c "$VAGRANT_SNAPSHOT_NAME" "$disk"
 		count=$((count + 1))
 	done <<<"$disks"
 
-	vagrant_up
+	vagrant_up --parallel --no-provision
 
 	echo "env.sh: vagrant snapshot saved ($count disk(s)) -> $VAGRANT_SNAPSHOT_NAME"
 }
 
 qemu_restore() {
-	local disks disk count
+	local all_disks disks disk count expected_count
 
-	disks="$(qemu_snapshotted_disks)"
-	if [[ -z "$disks" ]]; then
-		echo "env.sh: no vagrant snapshot found ($VAGRANT_SNAPSHOT_NAME)" >&2
+	all_disks="$(qemu_disks)"
+	if [[ -z "$all_disks" ]]; then
+		echo "env.sh: no qemu disks to restore" >&2
 		return 1
 	fi
 
 	echo "env.sh: vagrant halt (qemu-img needs the disks unlocked)"
-	vagrant halt
+	vagrant_halt_parallel
+
+	disks="$(qemu_snapshotted_disks)"
+	expected_count=0
+	while IFS= read -r disk; do
+		[[ -n "$disk" ]] || continue
+		expected_count=$((expected_count + 1))
+	done <<<"$all_disks"
+
+	count=0
+	while IFS= read -r disk; do
+		[[ -n "$disk" ]] || continue
+		count=$((count + 1))
+	done <<<"$disks"
+	if ((count != expected_count)); then
+		echo "env.sh: snapshot $VAGRANT_SNAPSHOT_NAME is missing disk(s)" >&2
+		vagrant_up --parallel --no-provision || true
+		return 1
+	fi
 
 	count=0
 	while IFS= read -r disk; do
@@ -478,7 +562,7 @@ qemu_restore() {
 		count=$((count + 1))
 	done <<<"$disks"
 
-	vagrant_up
+	vagrant_up --parallel --no-provision
 
 	echo "env.sh: vagrant restored ($count disk(s)) from $VAGRANT_SNAPSHOT_NAME"
 }
