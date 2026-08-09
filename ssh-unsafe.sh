@@ -2,4 +2,4 @@
 
 set -e
 
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${@}
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${*}"
