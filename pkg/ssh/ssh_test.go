@@ -31,15 +31,15 @@ func TestSSH(t *testing.T) {
 		require.Error(t, err, fmt.Sprintf("stdout: %#+v, stder: %#+v", stdout, stderr))
 		fmt.Println()
 
-		err = TransferFile("localhost", 2221, "user1", "Password1", "/tmp/some-file.txt", "/home/user1/some-file.txt")
+		err = SendFile("localhost", 2221, "user1", "Password1", "/tmp/some-file.txt", "/home/user1/some-file.txt")
 		require.NoError(t, err)
 		fmt.Println()
 
-		err = TransferFileWithSudo("localhost", 2221, "user1", "Password1", "/tmp/some-file.txt", "/etc/some-file.txt")
+		err = SendFileWithSudo("localhost", 2221, "user1", "Password1", "/tmp/some-file.txt", "/etc/some-file.txt")
 		require.Error(t, err)
 		fmt.Println()
 
-		err = TransferFileWithSudo("localhost", 2221, "user1", "Password1", "/tmp/other-file.bin", "/etc/other-file.bin")
+		err = SendFileWithSudo("localhost", 2221, "user1", "Password1", "/tmp/other-file.bin", "/etc/other-file.bin")
 		require.Error(t, err)
 		fmt.Println()
 	})
@@ -55,15 +55,15 @@ func TestSSH(t *testing.T) {
 		require.NoError(t, err, fmt.Sprintf("stdout: %#+v, stder: %#+v", stdout, stderr))
 		fmt.Println()
 
-		err = TransferFile("localhost", 2221, "user2", "Password2", "/tmp/some-file.txt", "/home/user2/some-file.txt")
+		err = SendFile("localhost", 2221, "user2", "Password2", "/tmp/some-file.txt", "/home/user2/some-file.txt")
 		require.NoError(t, err)
 		fmt.Println()
 
-		err = TransferFileWithSudo("localhost", 2221, "user2", "Password2", "/tmp/some-file.txt", "/etc/some-file.txt")
+		err = SendFileWithSudo("localhost", 2221, "user2", "Password2", "/tmp/some-file.txt", "/etc/some-file.txt")
 		require.NoError(t, err)
 		fmt.Println()
 
-		err = TransferFileWithSudo("localhost", 2221, "user2", "Password2", "/tmp/other-file.bin", "/etc/other-file.bin")
+		err = SendFileWithSudo("localhost", 2221, "user2", "Password2", "/tmp/other-file.bin", "/etc/other-file.bin")
 		require.NoError(t, err)
 		fmt.Println()
 	})
@@ -79,15 +79,15 @@ func TestSSH(t *testing.T) {
 		require.NoError(t, err, fmt.Sprintf("stdout: %#+v, stder: %#+v", stdout, stderr))
 		fmt.Println()
 
-		err = TransferFile("localhost", 2221, "user3", "Password3", "/tmp/some-file.txt", "/home/user3/some-file.txt")
+		err = SendFile("localhost", 2221, "user3", "Password3", "/tmp/some-file.txt", "/home/user3/some-file.txt")
 		require.NoError(t, err)
 		fmt.Println()
 
-		err = TransferFileWithSudo("localhost", 2221, "user3", "Password3", "/tmp/some-file.txt", "/etc/some-file.txt")
+		err = SendFileWithSudo("localhost", 2221, "user3", "Password3", "/tmp/some-file.txt", "/etc/some-file.txt")
 		require.NoError(t, err)
 		fmt.Println()
 
-		err = TransferFileWithSudo("localhost", 2221, "user3", "Password3", "/tmp/other-file.bin", "/etc/other-file.bin")
+		err = SendFileWithSudo("localhost", 2221, "user3", "Password3", "/tmp/other-file.bin", "/etc/other-file.bin")
 		require.NoError(t, err)
 		fmt.Println()
 	})
@@ -103,15 +103,15 @@ func TestSSH(t *testing.T) {
 		require.NoError(t, err, fmt.Sprintf("stdout: %#+v, stder: %#+v", stdout, stderr))
 		fmt.Println()
 
-		err = TransferFile("localhost", 2229, "root", "Password9", "/tmp/some-file.txt", "/root/some-file.txt")
+		err = SendFile("localhost", 2229, "root", "Password9", "/tmp/some-file.txt", "/root/some-file.txt")
 		require.NoError(t, err)
 		fmt.Println()
 
-		err = TransferFileWithSudo("localhost", 2229, "root", "Password9", "/tmp/some-file.txt", "/etc/some-file.txt")
+		err = SendFileWithSudo("localhost", 2229, "root", "Password9", "/tmp/some-file.txt", "/etc/some-file.txt")
 		require.NoError(t, err)
 		fmt.Println()
 
-		err = TransferFileWithSudo("localhost", 2229, "root", "Password9", "/tmp/other-file.bin", "/etc/other-file.bin")
+		err = SendFileWithSudo("localhost", 2229, "root", "Password9", "/tmp/other-file.bin", "/etc/other-file.bin")
 		require.NoError(t, err)
 		fmt.Println()
 	})
@@ -146,13 +146,13 @@ func TestSSH(t *testing.T) {
 		require.NotEmpty(t, stdout)
 		require.NotEmpty(t, stderr)
 
-		err = c.TransferFile("/tmp/some-file.txt", "/var/log/weird-file.txt")
+		err = c.SendFile("/tmp/some-file.txt", "/var/log/weird-file.txt")
 		require.Error(t, err)
 
-		err = c.TransferFileWithSudo("/tmp/some-file.txt", "/var/log/weird-file.txt")
+		err = c.SendFileWithSudo("/tmp/some-file.txt", "/var/log/weird-file.txt")
 		require.NoError(t, err)
 
-		err = c.TransferFileWithSudo("/tmp/other-file.bin", "/var/log/weird-file.txt")
+		err = c.SendFileWithSudo("/tmp/other-file.bin", "/var/log/weird-file.txt")
 		require.NoError(t, err)
 
 		stdout, stderr, err = c.RunCommandWithSudo("du -sh /var/log/weird-file.txt")

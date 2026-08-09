@@ -39,12 +39,17 @@ docker run -d --restart=always --name postgres -e 'POSTGRES_PASSWORD=NoCloud!11'
 			},
 		}
 
-		err := Deploy(target, steps)
+		tookAction, err := Deploy(target, steps)
 		require.NoError(t, err)
+		require.True(t, tookAction)
+
+		tookAction, err = Deploy(target, steps)
+		require.NoError(t, err)
+		require.False(t, tookAction)
 	})
 
 	t.Run("K3sMaster", func(t *testing.T) {
-		t.Skip()
+		t.Skipf("TODO: hangs trying to install; not sure if resources, weird virtualization thing, Postgres datastore too slow- no idea")
 
 		target := "user2:Password2@192.168.56.12:22"
 
@@ -100,7 +105,12 @@ cilium status --wait
 			},
 		}
 
-		err := Deploy(target, steps)
+		tookAction, err := Deploy(target, steps)
 		require.NoError(t, err)
+		require.True(t, tookAction)
+
+		tookAction, err = Deploy(target, steps)
+		require.NoError(t, err)
+		require.False(t, tookAction)
 	})
 }

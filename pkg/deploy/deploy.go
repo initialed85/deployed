@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"fmt"
+	_log "log"
 	"os"
 	"strconv"
 	"strings"
@@ -11,19 +12,29 @@ import (
 	"github.com/initialed85/deployed/pkg/types"
 )
 
-func Deploy(target string, steps []types.Step) error {
-	stepsHash, err := types.HashSteps(steps)
+func Deploy(target string, steps []types.Step) (bool, error) {
+	deployID := uuid.Must(uuid.NewRandom())
+
+	log := _log.New(
+		os.Stdout,
+		fmt.Sprintf("Deploy{%s, %s} ", target, deployID),
+		_log.Ldate|_log.Ltime|_log.Lmicroseconds|_log.LUTC|_log.Lmsgprefix,
+	)
+
+	log.Printf("starting deploy")
+
+	localStepsHash, err := types.HashSteps(steps)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	deployID := uuid.Must(uuid.NewRandom())
+	log.Printf("local steps hash: %s", localStepsHash)
 
 	localStepsHashPath := fmt.Sprintf("/tmp/deployed-%s-steps-hash.txt", deployID)
 
-	err = os.WriteFile(localStepsHashPath, []byte(stepsHash), 0o777)
+	err = os.WriteFile(localStepsHashPath, []byte(localStepsHash), 0o777)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	defer func() {
@@ -64,22 +75,36 @@ func Deploy(target string, steps []types.Step) error {
 		return nil
 	}()
 	if err != nil {
-		return fmt.Errorf("failed to split %#+v into (username:password)@(host:port) because %s", target, err)
+		return false, fmt.Errorf("failed to split %#+v into (username:password)@(host:port) because %s", target, err)
 	}
 
 	c, err := ssh.Connect(host, int(port), username, password)
 	if err != nil {
-		return err
+		return false, err
+	}
+
+	remoteStepsHashPath := "deployed-steps-hash.txt"
+
+	out, _, _ := c.RunCommand(fmt.Sprintf("test -f '%s' && cat '%s'", remoteStepsHashPath, remoteStepsHashPath))
+
+	remoteStepsHash := strings.TrimSpace(out)
+
+	if remoteStepsHash == localStepsHash {
+		log.Printf("local steps hash and remote steps hash match")
+		log.Printf("deploy complete (no action required)")
+		return false, nil
 	}
 
 	remoteAttemptedStepsHashPath := fmt.Sprintf("deployed-steps-hash.txt.attempted-%s", deployID)
 
-	err = c.TransferFile(localStepsHashPath, remoteAttemptedStepsHashPath)
+	err = c.SendFile(localStepsHashPath, remoteAttemptedStepsHashPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	pathsToCleanUp := make([]string, 0)
+
+	tookAction := false
 
 	for i, step := range steps {
 		err := func() error {
@@ -91,10 +116,12 @@ func Deploy(target string, steps []types.Step) error {
 					return err
 				}
 
-				err = c.TransferFile(path, path)
+				err = c.SendFile(path, path)
 				if err != nil {
 					return err
 				}
+
+				tookAction = true
 
 				pathsToCleanUp = append(pathsToCleanUp, path)
 
@@ -107,7 +134,7 @@ func Deploy(target string, steps []types.Step) error {
 			return nil
 		}()
 		if err != nil {
-			return fmt.Errorf("failed to execute step %d script because %s", i, err)
+			return tookAction, fmt.Errorf("failed to execute step %d script because %s", i, err)
 		}
 
 		err = func() error {
@@ -119,10 +146,12 @@ func Deploy(target string, steps []types.Step) error {
 					return err
 				}
 
-				err = c.TransferFile(path, path)
+				err = c.SendFile(path, path)
 				if err != nil {
 					return err
 				}
+
+				tookAction = true
 
 				pathsToCleanUp = append(pathsToCleanUp, path)
 
@@ -135,17 +164,20 @@ func Deploy(target string, steps []types.Step) error {
 			return nil
 		}()
 		if err != nil {
-			return fmt.Errorf("failed to execute step %d script_with_sudo because %s", i, err)
+			return tookAction, fmt.Errorf("failed to execute step %d script_with_sudo because %s", i, err)
 		}
 	}
 
 	for _, path := range pathsToCleanUp {
-		_, _, _ = c.RunCommand(fmt.Sprintf("rm -f %s", path))
+		_, _, _ = c.RunCommand(fmt.Sprintf("rm -f %s || true", path))
 	}
 
-	remoteStepsHashPath := "deployed-steps-hash.txt"
+	_, _, err = c.RunCommand(fmt.Sprintf("mv -fv %s %s", remoteAttemptedStepsHashPath, remoteStepsHashPath))
+	if err != nil {
+		return tookAction, fmt.Errorf("failed to mark attempted steps as confirmed because %s", err)
+	}
 
-	_, _, _ = c.RunCommand(fmt.Sprintf("mv -fv %s %s", remoteAttemptedStepsHashPath, remoteStepsHashPath))
+	log.Printf("deploy complete (took action)")
 
-	return nil
+	return tookAction, nil
 }

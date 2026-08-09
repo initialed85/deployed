@@ -271,7 +271,7 @@ func (c *Connection) RunCommandWithSudo(command string) (string, string, error) 
 	return c.RunCommand(fmt.Sprintf("sudo -S %s", command))
 }
 
-func (c *Connection) TransferFile(localFilePath string, remoteFilePath string) error {
+func (c *Connection) SendFile(localFilePath string, remoteFilePath string) error {
 	stat, err := os.Stat(localFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to transfer %s to %s:%s because %s", localFilePath, c.tag, remoteFilePath, err)
@@ -296,9 +296,9 @@ func (c *Connection) TransferFile(localFilePath string, remoteFilePath string) e
 	return nil
 }
 
-func (c *Connection) TransferFileWithSudo(localFilePath string, remoteFilePath string) error {
+func (c *Connection) SendFileWithSudo(localFilePath string, remoteFilePath string) error {
 	if c.IsRoot {
-		return c.TransferFile(localFilePath, remoteFilePath)
+		return c.SendFile(localFilePath, remoteFilePath)
 	}
 
 	if !c.CanSudo {
@@ -307,7 +307,7 @@ func (c *Connection) TransferFileWithSudo(localFilePath string, remoteFilePath s
 
 	tempFile := fmt.Sprintf("/tmp/deployed-transfer-%s.tmp", uuid.Must(uuid.NewRandom()))
 
-	err := c.TransferFile(localFilePath, tempFile)
+	err := c.SendFile(localFilePath, tempFile)
 	if err != nil {
 		return err
 	}
@@ -340,22 +340,22 @@ func RunCommandWithSudo(host string, port int, username string, password string,
 	return c.RunCommandWithSudo(command)
 }
 
-func TransferFile(host string, port int, username string, password string, localFilePath string, remoteFilePath string) error {
+func SendFile(host string, port int, username string, password string, localFilePath string, remoteFilePath string) error {
 	c, err := Connect(host, port, username, password)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	return c.TransferFile(localFilePath, remoteFilePath)
+	return c.SendFile(localFilePath, remoteFilePath)
 }
 
-func TransferFileWithSudo(host string, port int, username string, password string, localFilePath string, remoteFilePath string) error {
+func SendFileWithSudo(host string, port int, username string, password string, localFilePath string, remoteFilePath string) error {
 	c, err := Connect(host, port, username, password)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	return c.TransferFileWithSudo(localFilePath, remoteFilePath)
+	return c.SendFileWithSudo(localFilePath, remoteFilePath)
 }
