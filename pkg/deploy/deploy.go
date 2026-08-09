@@ -12,10 +12,28 @@ import (
 )
 
 func Deploy(target string, steps []types.Step) error {
+	stepsHash, err := types.HashSteps(steps)
+	if err != nil {
+		return err
+	}
+
+	deployID := uuid.Must(uuid.NewRandom())
+
+	localStepsHashPath := fmt.Sprintf("/tmp/deployed-%s-steps-hash.txt", deployID)
+
+	err = os.WriteFile(localStepsHashPath, []byte(stepsHash), 0o777)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = os.Remove(localStepsHashPath)
+	}()
+
 	var username, password, host string
 	var port int64
 
-	err := func() error {
+	err = func() error {
 		parts := strings.Split(target, "@")
 		if len(parts) < 2 {
 			return fmt.Errorf("target doesn't have '@' symbol")
@@ -54,7 +72,12 @@ func Deploy(target string, steps []types.Step) error {
 		return err
 	}
 
-	deployID := uuid.Must(uuid.NewRandom())
+	remoteAttemptedStepsHashPath := fmt.Sprintf("deployed-steps-hash.txt.attempted-%s", deployID)
+
+	err = c.TransferFile(localStepsHashPath, remoteAttemptedStepsHashPath)
+	if err != nil {
+		return err
+	}
 
 	pathsToCleanUp := make([]string, 0)
 
@@ -119,6 +142,10 @@ func Deploy(target string, steps []types.Step) error {
 	for _, path := range pathsToCleanUp {
 		_, _, _ = c.RunCommand(fmt.Sprintf("rm -f %s", path))
 	}
+
+	remoteStepsHashPath := "deployed-steps-hash.txt"
+
+	_, _, _ = c.RunCommand(fmt.Sprintf("mv -fv %s %s", remoteAttemptedStepsHashPath, remoteStepsHashPath))
 
 	return nil
 }

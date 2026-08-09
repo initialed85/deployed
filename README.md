@@ -20,8 +20,11 @@ A simple way to provision software on Linux servers, via SSH.
   - [DONE] Be able to run commands with sudo
   - [DONE] Be able to transfer files via SCP
   - [DONE] Be able to transfer files via SCP and move them to a privileged location with sudo
+  - [TODO] Expose SSH layer via an app entrypoint (as a low-level escape hatch)
 - [WIP] Build deployment layer
-  - [WIP] Be able to run a number of Steps against a Target
+  - [DONE] Be able to run a number of Steps against a Target
+  - [WIP] Store a hash of the last run Steps on a Target for idempotency
+  - [TODO] Expose deployment layer via an app entrypoint
 
 ## Dev notes
 
@@ -34,9 +37,17 @@ There's some one-time setup stuff you'll need:
 - libvirt
 
 ```shell
-# shell 1
 ./env.sh up
 
-# shell 2
-find . -type f -name '*.go' | entr -n -r -cc -s "go test -v -count=1 ./pkg/ssh ./pkg/deploy"
+./test.sh watch
 ```
+
+You can also snapshot and restore the VMs and containers like this:
+
+```shell
+./env.sh snapshot
+
+./env.sh restore
+```
+
+By default `./env.sh up` will take a snapshot once the environment settles, so you can in theory call `./env.sh restore` at any point after starting to reset your environment.

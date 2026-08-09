@@ -1,25 +1,10 @@
 #!/bin/bash
-# env.sh - platform-aware wrapper around docker compose + the Vagrantfile.
-#
-# Usage:
-#   ./env.sh up                  docker compose up --build, then all nodes
-#   ./env.sh up node2            docker compose up --build, then a single node
-#   ./env.sh down                halt all nodes, then docker compose down
-#   ./env.sh down node2          halt a single node (leaves docker compose up)
-#   ./env.sh destroy             destroy all nodes (and their disks)
-#   ./env.sh status              show vagrant status
-#   ./env.sh provision           re-run the provisioner on all nodes
-#   ./env.sh ssh <node> [user]   ssh into a node as <user> (default: user1)
-#   ./env.sh port <node>         print the host-side SSH port for a node
-#   ./env.sh provider            print the auto-detected provider
-#
-# Override the auto-detected provider:
-#   ENV_PROVIDER=libvirt ./env.sh up
-#   ENV_PROVIDER=virtualbox ./env.sh up
 
 set -euo pipefail
 
-# --- platform detection ----------------------------------------------------
+#
+# platform handling
+#
 
 os="$(uname -s)"
 arch="$(uname -m)"
@@ -34,12 +19,8 @@ arm64 | aarch64) arch="arm64" ;;
 x86_64 | amd64) arch="amd64" ;;
 esac
 
-# Providers that ship with Vagrant (no plugin needed). Everything else
-# requires a vagrant-<provider> plugin to be installed to be usable.
 BUILTIN_PROVIDERS="virtualbox hyperv docker"
 
-# plugin_for() -> echoes the plugin name for a non-built-in provider,
-# or empty if it isn't a known plugin-required provider.
 plugin_for() {
 	case "$1" in
 	libvirt) echo "vagrant-libvirt" ;;
@@ -50,34 +31,33 @@ plugin_for() {
 	esac
 }
 
-# provider_ready() -> 0 if the provider is actually usable right now, not just
-# installed. Plugin install alone isn't enough: e.g. libvirt needs a running
-# daemon, parallels needs a licensed Parallels, etc.
 provider_ready() {
 	local p="$1"
+
 	case "$p" in
+
 	libvirt)
-		# libvirt daemon reachable on the default system URI?
 		virsh -c qemu:///system uri >/dev/null 2>&1 && return 0
-		# macOS (macports/homebrew) often uses a per-user socket; try that too.
 		[[ -S /var/run/libvirt/libvirt-sock ]] ||
 			[[ -S /opt/local/var/run/libvirt/libvirt-sock ]] ||
 			[[ -S "$HOME/.libvirt/libvirt-sock" ]] && return 0
 		return 1
 		;;
+
 	parallels)
-		# Parallels CLI present *and* the VM service responding.
 		command -v prlctl >/dev/null 2>&1 && prlctl list -a >/dev/null 2>&1
 		;;
+
 	qemu)
-		# QEMU binary is qemu-system-aarch64 on arm64 hosts (uname says arm64).
 		local qarch="amd64"
 		[[ "$arch" == "arm64" ]] && qarch="aarch64"
 		command -v "qemu-system-${qarch}" >/dev/null 2>&1
 		;;
+
 	*)
 		return 0
 		;;
+
 	esac
 }
 
@@ -86,12 +66,9 @@ detect_provider() {
 		echo "${ENV_PROVIDER}"
 		return
 	fi
-	# Candidate preference order per host.
-	# macOS / Apple Silicon: libvirt (free) > qemu > virtualbox > parallels
-	# macOS / Intel:         libvirt > virtualbox > qemu
-	# Linux:                 libvirt > virtualbox
-	# Windows:               virtualbox
+
 	local candidates
+
 	case "$platform/$arch" in
 	macos/arm64) candidates="libvirt qemu virtualbox parallels" ;;
 	macos/amd64) candidates="libvirt virtualbox qemu" ;;
@@ -107,21 +84,27 @@ detect_provider() {
 	for p in $candidates; do
 		if [[ " $BUILTIN_PROVIDERS " == *" $p "* ]]; then
 			case "$p" in
+
 			virtualbox) [[ -x "$(command -v VBoxManage 2>/dev/null)" ]] && provider_ready "$p" && {
 				echo "$p"
 				return
 			} ;;
+
 			hyperv) [[ "$platform" == "windows" ]] && {
 				echo "$p"
 				return
 			} ;;
+
 			docker) command -v docker >/dev/null 2>&1 && {
 				echo "$p"
 				return
 			} ;;
+
 			esac
+
 			continue
 		fi
+
 		plugin="$(plugin_for "$p")"
 		[[ -z "$plugin" ]] && continue
 		if printf '%s\n' "$plugins" | grep -q "^${plugin} " && provider_ready "$p"; then
@@ -129,35 +112,15 @@ detect_provider() {
 			return
 		fi
 	done
-	# Fallback: let Vagrant choose its default.
+
 	echo ""
 }
 
 provider="$(detect_provider)"
 
-# --- helpers ---------------------------------------------------------------
-
-NODE_PORTS=(node1:12221 node2:12222 node3:12223 node4:12224)
-
-port_for_node() {
-	local node="$1"
-	for entry in "${NODE_PORTS[@]}"; do
-		if [[ "${entry%%:*}" == "$node" ]]; then
-			echo "${entry##*:}"
-			return
-		fi
-	done
-	echo "env.sh: unknown node '$node' (expected: ${NODE_PORTS[*]%%:*})" >&2
-	exit 1
-}
-
-vagrant_up() {
-	if [[ -n "$provider" ]]; then
-		vagrant up --provider="$provider" "$@"
-	else
-		vagrant up "$@"
-	fi
-}
+#
+# helpers
+#
 
 require_vagrant() {
 	command -v vagrant >/dev/null 2>&1 || {
@@ -175,13 +138,9 @@ require_docker() {
 	}
 }
 
-# docker compose is only invoked when a compose file is present in the
-# project root.  This keeps env.sh usable in repos that are vagrant-only.
 compose_file() {
-	for f in docker-compose.yaml docker-compose.yml compose.yaml compose.yml; do
-		[[ -f "$f" ]] && { echo "$f"; return 0; }
-	done
-	return 1
+	echo "docker-compose.yaml"
+	return 0
 }
 
 compose_up() {
@@ -196,83 +155,274 @@ compose_down() {
 	local cf
 	cf="$(compose_file)" || return 0
 	require_docker
+	local args=(-f "$cf")
+	[[ -f "docker-compose.restore.yaml" ]] && args+=(-f "docker-compose.restore.yaml")
 	echo "env.sh: docker compose down --volumes --remove-orphans"
-	docker compose -f "$cf" down --volumes --remove-orphans
+	docker compose "${args[@]}" down --volumes --remove-orphans
 }
 
-# --- commands --------------------------------------------------------------
+vagrant_up() {
+	if [[ -n "$provider" ]]; then
+		vagrant up --provider="$provider" "$@"
+	else
+		vagrant up "$@"
+	fi
+}
+
+#
+# commands
+#
 
 cmd_up() {
 	require_vagrant
+
+	rm -f "docker-compose.restore.yaml" || true
+	rm -f "docker-compose.restore.yaml.bak" || true
+	rm -f "$VAGRANT_SNAPSHOT_DIR"/*.save 2>/dev/null || true
+
 	compose_up
+
 	echo "env.sh: bringing up nodes on $platform/$arch via provider=${provider:-<default>}"
 	vagrant_up "$@"
+
+	echo "env.sh: taking initial snapshot"
+	cmd_snapshot
 }
 
 cmd_down() {
 	require_vagrant
-	vagrant halt "$@"
-	# Only tear down docker compose when halting everything.  A single-node
-	# down (e.g. `down node2`) leaves the compose services running so the
-	# rest of the test harness stays available.
+	vagrant destroy -f "$@"
+
 	if [[ $# -eq 0 ]]; then
 		compose_down
+		rm -f "$VAGRANT_SNAPSHOT_DIR"/*.save 2>/dev/null || true
+		rm -f docker-compose.restore.yaml docker-compose.restore.yaml.bak
 	fi
 }
 
-cmd_destroy() {
+cmd_vagrant() {
 	require_vagrant
-	vagrant destroy -f "$@"
+	vagrant "$@"
 }
 
-cmd_status() {
-	require_vagrant
-	vagrant status "$@"
+# --- snapshot/restore ------------------------------------------------------
+
+VAGRANT_SNAPSHOT_NAME="env-sh"
+LIBVIRT_URI="qemu:///system"
+VAGRANT_SNAPSHOT_DIR=".vagrant/snapshots"
+
+uuid() {
+	if command -v uuidgen >/dev/null 2>&1; then
+		uuidgen
+	elif [[ -r /proc/sys/kernel/random/uuid ]]; then
+		cat /proc/sys/kernel/random/uuid
+	else
+		printf '%s-%s-%s' "$(date +%s)" "$RANDOM" "$RANDOM"
+	fi
 }
 
-cmd_provision() {
-	require_vagrant
-	vagrant provision "$@"
+vagrant_vm_names() {
+	vagrant status --machine-readable 2>/dev/null |
+		awk -F, '$3 == "provider-name" { print $2 }' |
+		sort -u
 }
 
-cmd_ssh() {
-	local node="${1:-}"
-	local user="${2:-user1}"
-	[[ -n "$node" ]] || {
-		echo "usage: env.sh ssh <node> [user]" >&2
-		exit 1
+libvirt_domain_for() {
+	local vm="$1"
+	virsh -c "$LIBVIRT_URI" list --all --name 2>/dev/null |
+		grep -E "_${vm}$" | head -1
+}
+
+compose_snapshot() {
+	local cf bak uuid svc cid tag committed
+
+	cf="$(compose_file)" || {
+		echo "env.sh: no docker-compose file; skipping containers"
+		return 0
 	}
-	local port
-	port="$(port_for_node "$node")"
-	echo "env.sh: ssh ${user}@localhost:${port} ($node)"
-	ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-		-p "$port" "${user}@localhost"
+
+	require_docker
+
+	bak="docker-compose.restore.yaml.bak"
+	# shellcheck disable=SC2019
+	# shellcheck disable=SC2018
+	uuid="$(uuid | tr 'A-Z' 'a-z')"
+
+	rm -f "docker-compose.restore.yaml" "$bak"
+	printf 'services:\n' >"$bak"
+
+	committed=0
+
+	while IFS= read -r svc; do
+		cid="$(docker compose -f "$cf" ps -q "$svc" 2>/dev/null || true)"
+		if [[ -z "$cid" ]]; then
+			echo "env.sh: skip '$svc' (not running)"
+			continue
+		fi
+		tag="env-restore:snap-${uuid}-${svc}"
+		echo "env.sh: docker commit $svc -> $tag"
+		docker commit "$cid" "$tag" >/dev/null
+		printf '  %s:\n    image: %s\n' "$svc" "$tag" >>"$bak"
+		committed=$((committed + 1))
+	done < <(docker compose -f "$cf" config --services)
+
+	if ((committed == 0)); then
+		echo "env.sh: no running containers snapshotted; removed restore overlay"
+		rm -f "$bak"
+	else
+		echo "env.sh: docker snapshot saved -> $bak ($committed service(s))"
+	fi
 }
 
-cmd_port() {
-	local node="${1:-}"
-	[[ -n "$node" ]] || {
-		echo "usage: env.sh port <node>" >&2
-		exit 1
+compose_restore() {
+	local cf bak cur
+
+	cf="$(compose_file)" || {
+		echo "env.sh: no docker-compose file; skipping containers"
+		return 0
 	}
-	port_for_node "$node"
+
+	require_docker
+
+	bak="docker-compose.restore.yaml.bak"
+	cur="docker-compose.restore.yaml"
+	if [[ ! -f "$bak" ]]; then
+		echo "env.sh: no docker snapshot found (missing $bak)" >&2
+		return 1
+	fi
+
+	cp -f "$bak" "$cur"
+
+	echo "env.sh: docker compose up (no build, from snapshot $cur)"
+	docker compose -f "$cf" -f "$cur" stop -t0 2>/dev/null || true
+	docker compose -f "$cf" -f "$cur" up -d
 }
 
-cmd_provider() {
-	echo "${provider:-<default>}"
+vagrant_snapshot() {
+	require_vagrant
+	if [[ "$provider" == "libvirt" ]]; then
+		libvirt_snapshot
+	else
+		echo "env.sh: vagrant snapshot save $VAGRANT_SNAPSHOT_NAME"
+		vagrant snapshot delete "$VAGRANT_SNAPSHOT_NAME" >/dev/null 2>&1 || true
+		vagrant snapshot save "$VAGRANT_SNAPSHOT_NAME"
+	fi
 }
 
-cmd_info() {
-	echo "platform:  $platform"
-	echo "arch:      $arch"
-	echo "provider:  ${provider:-<default>}"
-	echo "nodes:"
-	for entry in "${NODE_PORTS[@]}"; do
-		printf "  %s -> localhost:%s\n" "${entry%%:*}" "${entry##*:}"
+vagrant_restore() {
+	require_vagrant
+	if [[ "$provider" == "libvirt" ]]; then
+		libvirt_restore
+	else
+		echo "env.sh: vagrant snapshot restore $VAGRANT_SNAPSHOT_NAME"
+		vagrant snapshot restore "$VAGRANT_SNAPSHOT_NAME"
+	fi
+}
+
+libvirt_snapshot() {
+	local snapdir="$VAGRANT_SNAPSHOT_DIR" vm domain state disk saved
+
+	mkdir -p "$snapdir"
+
+	saved=0
+
+	while IFS= read -r vm; do
+		[[ -z "$vm" ]] && continue
+		domain="$(libvirt_domain_for "$vm")"
+		if [[ -z "$domain" ]]; then
+			echo "env.sh: skip $vm (no libvirt domain)"
+			continue
+		fi
+		state="$(virsh -c "$LIBVIRT_URI" domstate "$domain" 2>/dev/null)"
+		if [[ "$state" != "running" ]]; then
+			echo "env.sh: skip $vm ($state)"
+			continue
+		fi
+		echo "env.sh: virsh save $domain -> $snapdir/${vm}.save"
+		virsh -c "$LIBVIRT_URI" save "$domain" "$snapdir/${vm}.save"
+		disk="$(virsh -c "$LIBVIRT_URI" domblklist "$domain" --details 2>/dev/null |
+			awk '$2 == "disk" { print $NF }')"
+		if [[ -n "$disk" ]]; then
+			echo "env.sh: qemu-img snapshot -c $VAGRANT_SNAPSHOT_NAME $disk"
+			sudo qemu-img snapshot -c "$VAGRANT_SNAPSHOT_NAME" "$disk"
+		fi
+		echo "env.sh: virsh restore $snapdir/${vm}.save"
+		virsh -c "$LIBVIRT_URI" restore "$snapdir/${vm}.save"
+		saved=$((saved + 1))
+	done < <(vagrant_vm_names)
+
+	if ((saved == 0)); then
+		echo "env.sh: no running VMs snapshotted"
+		return 1
+	fi
+
+	echo "env.sh: vagrant snapshot saved ($saved VM(s)) -> $snapdir/"
+}
+
+libvirt_restore() {
+	local snapdir="$VAGRANT_SNAPSHOT_DIR" savefile vm domain state disk restored
+
+	if [[ ! -d "$snapdir" ]]; then
+		echo "env.sh: no vagrant snapshot found (missing $snapdir)" >&2
+		return 1
+	fi
+
+	for savefile in "$snapdir"/*.save; do
+		[[ -f "$savefile" ]] || continue
+		vm="$(basename "$savefile" .save)"
+		domain="$(libvirt_domain_for "$vm")"
+		if [[ -n "$domain" ]]; then
+			state="$(virsh -c "$LIBVIRT_URI" domstate "$domain" 2>/dev/null)"
+			if [[ "$state" == "running" ]]; then
+				echo "env.sh: virsh destroy $domain (running)"
+				virsh -c "$LIBVIRT_URI" destroy "$domain" >/dev/null
+			fi
+		fi
 	done
+
+	for savefile in "$snapdir"/*.save; do
+		[[ -f "$savefile" ]] || continue
+		vm="$(basename "$savefile" .save)"
+		domain="$(libvirt_domain_for "$vm")"
+		[[ -n "$domain" ]] || continue
+		disk="$(virsh -c "$LIBVIRT_URI" domblklist "$domain" --details 2>/dev/null |
+			awk '$2 == "disk" { print $NF }')"
+		if [[ -n "$disk" ]]; then
+			echo "env.sh: qemu-img snapshot -a $VAGRANT_SNAPSHOT_NAME $disk"
+			sudo qemu-img snapshot -a "$VAGRANT_SNAPSHOT_NAME" "$disk"
+		fi
+	done
+
+	restored=0
+
+	for savefile in "$snapdir"/*.save; do
+		[[ -f "$savefile" ]] || continue
+		echo "env.sh: virsh restore $savefile"
+		virsh -c "$LIBVIRT_URI" restore "$savefile"
+		restored=$((restored + 1))
+	done
+
+	if ((restored == 0)); then
+		echo "env.sh: no save files in $snapdir" >&2
+		return 1
+	fi
+
+	echo "env.sh: vagrant restored ($restored VM(s)) from $snapdir/"
 }
 
-# --- dispatch ---------------------------------------------------------------
+cmd_snapshot() {
+	compose_snapshot
+	vagrant_snapshot
+}
+
+cmd_restore() {
+	compose_restore
+	vagrant_restore
+}
+
+#
+# entrypoint
+#
 
 usage() {
 	awk 'NR==1 && /^#!/ { next } /^#/ { sub(/^# ?/,"  "); print; next } { exit }' "$0"
@@ -283,13 +433,9 @@ sub="${1:-}"
 case "$sub" in
 up) cmd_up "$@" ;;
 down) cmd_down "$@" ;;
-destroy) cmd_destroy "$@" ;;
-status) cmd_status "$@" ;;
-provision) cmd_provision "$@" ;;
-ssh) cmd_ssh "$@" ;;
-port) cmd_port "$@" ;;
-provider) cmd_provider "$@" ;;
-info) cmd_info "$@" ;;
+snapshot) cmd_snapshot "$@" ;;
+restore) cmd_restore "$@" ;;
+vagrant) cmd_vagrant "$@" ;;
 "" | help | -h | --help) usage ;;
 *)
 	echo "env.sh: unknown command '$sub'" >&2
@@ -297,3 +443,5 @@ info) cmd_info "$@" ;;
 	exit 1
 	;;
 esac
+
+echo -e "\nenv.sh: done."

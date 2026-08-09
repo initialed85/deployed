@@ -3,6 +3,11 @@
 #
 # 4 x Ubuntu 26.04 nodes, SSH forwarded on host ports 12221-12224.
 #
+# Each node also gets a second NIC on a static private network
+# (192.168.56.11-14) so the nodes can talk to each other at
+# deterministic addresses.  /etc/hosts entries for all four nodes are
+# written by the provision script (node1 .. node4).
+#
 # Each node gets three users (mirrors Dockerfile.test):
 #   user1:Password1  -> no sudo
 #   user2:Password2  -> sudo with password
@@ -27,10 +32,10 @@ HOST_ARCH = case RbConfig::CONFIG["host_cpu"]
 BOX        = "bento/ubuntu-26.04"
 BOX_ARCH   = HOST_ARCH
 NODES = {
-  "node1" => 12221,
-  "node2" => 12222,
-  "node3" => 12223,
-  "node4" => 12224,
+  "node1" => { ssh_port: 12221, private_ip: "192.168.56.11" },
+  "node2" => { ssh_port: 12222, private_ip: "192.168.56.12" },
+  "node3" => { ssh_port: 12223, private_ip: "192.168.56.13" },
+  "node4" => { ssh_port: 12224, private_ip: "192.168.56.14" },
 }
 
 # The bento/ubuntu-26.04 box is UEFI-only: GPT disk with an EFI System
@@ -81,6 +86,19 @@ PROVISION_SCRIPT = <<~SHELL
   echo "PasswordAuthentication yes" > /etc/ssh/sshd_config.d/99-vagrant-test.conf
   sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
   systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+
+  # --- deterministic inter-node name resolution ---------------------------
+  # Point our own hostname at our private-network IP (bento maps it to
+  # 127.0.1.1, which breaks anything that advertises its own hostname),
+  # then add /etc/hosts entries for every other node.
+  idx="$(hostname | sed 's/^node//')"
+  sed -i "s/^127\\.0\\.1\\.1 .*/192.168.56.1${idx} $(hostname)/" /etc/hosts
+  for i in 1 2 3 4; do
+    if [ "$i" != "$idx" ]; then
+      grep -qE "[[:space:]]node${i}$" /etc/hosts ||
+        echo "192.168.56.1${i} node${i}" >> /etc/hosts
+    fi
+  done
 SHELL
 
 Vagrant.configure("2") do |config|
@@ -91,7 +109,7 @@ Vagrant.configure("2") do |config|
   # the vagrant-qemu plugin's interactive SMB credential prompt on macOS.
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
-  NODES.each do |name, host_port|
+  NODES.each do |name, cfg|
     config.vm.define name do |node|
       node.vm.hostname = name
 
@@ -99,9 +117,14 @@ Vagrant.configure("2") do |config|
       # test harness both use 1222x on the host side.
       node.vm.network "forwarded_port",
                       guest: 22,
-                      host:  host_port,
+                      host:  cfg[:ssh_port],
                       id:    "ssh",
                       auto_correct: false
+
+      # Static private network so the nodes can talk to each other at
+      # deterministic IPs (works on libvirt, virtualbox and parallels; the
+      # qemu provider only supports forwarded ports).
+      node.vm.network "private_network", ip: cfg[:private_ip]
 
       node.vm.provider "virtualbox" do |vb|
         vb.name   = "ubuntu26-#{name}"
@@ -145,7 +168,7 @@ Vagrant.configure("2") do |config|
         # The vagrant-qemu plugin drives its own SSH hostfwd and ignores the
         # Vagrantfile's forwarded_port host for id: "ssh"; point it at our
         # desired host port explicitly.
-        q.ssh_port = host_port
+        q.ssh_port = cfg[:ssh_port]
         q.memory   = 1024
         q.cpus     = 1
       end

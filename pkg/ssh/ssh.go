@@ -240,12 +240,17 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 
 	c.logger.Printf("I >>> %s", command)
 	err = c.SSHSession.Run(command)
+
+	_ = c.SSHSession.Close()
+
+	// Wait for both reader goroutines to drain their pipes before reading the
+	// accumulated output, whether Run succeeded or failed- otherwise we race
+	// their writes and can return partial (or empty) output.
+	wg.Wait()
+
 	if err != nil {
 		return stdout.String(), stderr.String(), fmt.Errorf("failed to run command %#+v because %s; stderr: ...\n\n%s", command, err, stderr.String())
 	}
-	_ = c.SSHSession.Close()
-
-	wg.Wait()
 
 	return stdout.String(), stderr.String(), nil
 }
