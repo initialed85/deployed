@@ -28,6 +28,10 @@ A simple way to provision software on Linux servers, via SSH.
 
 ## Dev notes
 
+The tooling (e.g. `env.sh` and related) is largely vibe-coded; so if it breaks or doesn't work for a given platform, just give the dice a roll, vibe code it some more until it works.
+
+The intention is to not use AI for any of the actual code (`AGENTS.md` should reflect this).
+
 There's some one-time setup stuff you'll need:
 
 - Docker and Docker Compose

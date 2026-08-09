@@ -163,9 +163,9 @@ compose_down() {
 
 vagrant_up() {
 	if [[ -n "$provider" ]]; then
-		vagrant up --provider="$provider" "$@"
+		vagrant up --provider="$provider"
 	else
-		vagrant up "$@"
+		vagrant up
 	fi
 }
 
@@ -183,7 +183,7 @@ cmd_up() {
 	compose_up
 
 	echo "env.sh: bringing up nodes on $platform/$arch via provider=${provider:-<default>}"
-	vagrant_up "$@"
+	vagrant_up
 
 	echo "env.sh: taking initial snapshot"
 	cmd_snapshot
@@ -191,13 +191,10 @@ cmd_up() {
 
 cmd_down() {
 	require_vagrant
-	vagrant destroy -f "$@"
-
-	if [[ $# -eq 0 ]]; then
-		compose_down
-		rm -f "$VAGRANT_SNAPSHOT_DIR"/*.save 2>/dev/null || true
-		rm -f docker-compose.restore.yaml docker-compose.restore.yaml.bak
-	fi
+	vagrant destroy -f
+	compose_down
+	rm -f "$VAGRANT_SNAPSHOT_DIR"/*.save 2>/dev/null || true
+	rm -f docker-compose.restore.yaml docker-compose.restore.yaml.bak
 }
 
 cmd_vagrant() {
@@ -429,13 +426,12 @@ usage() {
 }
 
 sub="${1:-}"
-[[ $# -gt 0 ]] && shift
 case "$sub" in
-up) cmd_up "$@" ;;
-down) cmd_down "$@" ;;
-snapshot) cmd_snapshot "$@" ;;
-restore) cmd_restore "$@" ;;
-vagrant) cmd_vagrant "$@" ;;
+up) cmd_up ;;
+down) cmd_down ;;
+snapshot) cmd_snapshot ;;
+restore) cmd_restore ;;
+vagrant) shift; cmd_vagrant "$@" ;;
 "" | help | -h | --help) usage ;;
 *)
 	echo "env.sh: unknown command '$sub'" >&2
