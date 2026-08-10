@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -271,15 +272,15 @@ func (c *Connection) RunCommandWithSudo(command string) (string, string, error) 
 	return c.RunCommand(fmt.Sprintf("sudo -S %s", command))
 }
 
-func (c *Connection) SendFile(localFilePath string, remoteFilePath string) error {
+func (c *Connection) UploadFile(localFilePath string, remoteFilePath string) error {
 	stat, err := os.Stat(localFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to transfer %s to %s:%s because %s", localFilePath, c.tag, remoteFilePath, err)
+		return fmt.Errorf("failed to upload %s to %s:%s because %s", localFilePath, c.tag, remoteFilePath, err)
 	}
 
 	f, err := os.Open(localFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to transfer %s to %s:%s because %s", localFilePath, c.tag, remoteFilePath, err)
+		return fmt.Errorf("failed to upload %s to %s:%s because %s", localFilePath, c.tag, remoteFilePath, err)
 	}
 	defer f.Close()
 
@@ -290,24 +291,24 @@ func (c *Connection) SendFile(localFilePath string, remoteFilePath string) error
 		"0"+strconv.FormatInt(int64(stat.Mode().Perm()), 8),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to transfer %s to %s:%s because %s", localFilePath, c.tag, remoteFilePath, err)
+		return fmt.Errorf("failed to upload %s to %s:%s because %s", localFilePath, c.tag, remoteFilePath, err)
 	}
 
 	return nil
 }
 
-func (c *Connection) SendFileWithSudo(localFilePath string, remoteFilePath string) error {
+func (c *Connection) UploadFileWithSudo(localFilePath string, remoteFilePath string) error {
 	if c.IsRoot {
-		return c.SendFile(localFilePath, remoteFilePath)
+		return c.UploadFile(localFilePath, remoteFilePath)
 	}
 
 	if !c.CanSudo {
-		return fmt.Errorf("this session cannot sudo (cannot move file after transfer)")
+		return fmt.Errorf("this session cannot sudo (cannot move file after upload)")
 	}
 
-	tempFile := fmt.Sprintf("/tmp/deployed-transfer-%s.tmp", uuid.Must(uuid.NewRandom()))
+	tempFile := fmt.Sprintf("/tmp/deployed-upload-file-%s.tmp", uuid.Must(uuid.NewRandom()))
 
-	err := c.SendFile(localFilePath, tempFile)
+	err := c.UploadFile(localFilePath, tempFile)
 	if err != nil {
 		return err
 	}
@@ -320,42 +321,197 @@ func (c *Connection) SendFileWithSudo(localFilePath string, remoteFilePath strin
 	return nil
 }
 
-func RunCommand(host string, port int, username string, password string, command string) (string, string, error) {
-	c, err := Connect(host, port, username, password)
+func (c *Connection) uploadFolder(localFolderPath string, remoteFolderPath string, runCommand func(string) (string, string, error)) error {
+	remoteFolderPath = strings.TrimRight(remoteFolderPath, "/")
+	localFolderPath = strings.TrimRight(localFolderPath, "/")
+
+	tempFile := fmt.Sprintf("/tmp/deployed-upload-folder-%s.tar.gz", uuid.Must(uuid.NewRandom()))
+
+	// TODO(initialed85): probably not portable
+	cmd := exec.Command("tar", "czf", tempFile, "-C", localFolderPath, ".")
+
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", "", err
+		return fmt.Errorf("failed tar-gzip %s to %s locally because %s\n\n%s", localFolderPath, tempFile, err, out)
 	}
-	defer c.Close()
 
-	return c.RunCommand(command)
-}
+	defer func() {
+		_ = os.Remove(tempFile)
+	}()
 
-func RunCommandWithSudo(host string, port int, username string, password string, command string) (string, string, error) {
-	c, err := Connect(host, port, username, password)
-	if err != nil {
-		return "", "", err
-	}
-	defer c.Close()
-
-	return c.RunCommandWithSudo(command)
-}
-
-func SendFile(host string, port int, username string, password string, localFilePath string, remoteFilePath string) error {
-	c, err := Connect(host, port, username, password)
+	err = c.UploadFile(tempFile, tempFile)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
 
-	return c.SendFile(localFilePath, remoteFilePath)
+	_, _, err = runCommand(fmt.Sprintf("mkdir -p '%s'", remoteFolderPath))
+	if err != nil {
+		return fmt.Errorf("failed to create %s remotely because %s", remoteFolderPath, err)
+	}
+
+	// TODO(initialed85): probably not portable
+	_, _, err = runCommand(fmt.Sprintf("tar xzf '%s' -C '%s'", tempFile, remoteFolderPath))
+	if err != nil {
+		return fmt.Errorf("failed to un-tar-gzip %s to %s remotely because %s", tempFile, remoteFolderPath, err)
+	}
+
+	return nil
 }
 
-func SendFileWithSudo(host string, port int, username string, password string, localFilePath string, remoteFilePath string) error {
-	c, err := Connect(host, port, username, password)
+func (c *Connection) UploadFolder(localFolderPath string, remoteFolderPath string) error {
+	return c.uploadFolder(localFolderPath, remoteFolderPath, c.RunCommand)
+}
+
+func (c *Connection) UploadFolderWithSudo(localFolderPath string, remoteFolderPath string) error {
+	return c.uploadFolder(localFolderPath, remoteFolderPath, c.RunCommandWithSudo)
+}
+
+func (c *Connection) Upload(localPath string, remotePath string) error {
+	stat, err := os.Stat(localPath)
+	if err != nil {
+		return fmt.Errorf("failed to upload %s because %s", localPath, err)
+	}
+
+	if !stat.IsDir() {
+		return c.UploadFile(localPath, remotePath)
+	}
+
+	return c.UploadFolder(localPath, remotePath)
+}
+
+func (c *Connection) UploadWithSudo(localPath string, remotePath string) error {
+	stat, err := os.Stat(localPath)
+	if err != nil {
+		return fmt.Errorf("failed to upload %s because %s", localPath, err)
+	}
+
+	if !stat.IsDir() {
+		return c.UploadFileWithSudo(localPath, remotePath)
+	}
+
+	return c.UploadFolderWithSudo(localPath, remotePath)
+}
+
+func (c *Connection) DownloadFile(remoteFilePath string, localFilePath string) error {
+	f, err := os.Create(localFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to download %s:%s from %s because %s", c.tag, remoteFilePath, localFilePath, err)
+	}
+
+	err = c.SCPClient.CopyFromRemote(
+		context.Background(),
+		f,
+		remoteFilePath,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to download %s:%s from %s because %s", c.tag, remoteFilePath, localFilePath, err)
+	}
+
+	return nil
+}
+
+func (c *Connection) DownloadFileWithSudo(remoteFilePath string, localFilePath string) error {
+	if c.IsRoot {
+		return c.DownloadFile(remoteFilePath, localFilePath)
+	}
+
+	if !c.CanSudo {
+		return fmt.Errorf("this session cannot sudo (cannot copy file before transfer)")
+	}
+
+	tempFile := fmt.Sprintf("/tmp/deployed-download-file-%s.tmp", uuid.Must(uuid.NewRandom()))
+
+	_, _, err := c.RunCommandWithSudo(fmt.Sprintf("cp '%s' '%s'", remoteFilePath, tempFile))
 	if err != nil {
 		return err
 	}
-	defer c.Close()
 
-	return c.SendFileWithSudo(localFilePath, remoteFilePath)
+	_, _, err = c.RunCommandWithSudo(fmt.Sprintf("chown ${USER}:${USER} '%s'", tempFile))
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_, _, _ = c.RunCommandWithSudo(fmt.Sprintf("rm -f '%s'", tempFile))
+	}()
+
+	err = c.DownloadFile(tempFile, localFilePath)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Connection) downloadFolder(remoteFolderPath string, localFolderPath string, runCommand func(string) (string, string, error)) error {
+	remoteFolderPath = strings.TrimRight(remoteFolderPath, "/")
+	localFolderPath = strings.TrimRight(localFolderPath, "/")
+
+	tempFile := fmt.Sprintf("/tmp/deployed-download-folder-%s.tar.gz", uuid.Must(uuid.NewRandom()))
+
+	// TODO(initialed85): probably not portable
+	_, _, err := runCommand(fmt.Sprintf("tar czf '%s' -C '%s' '.'", tempFile, remoteFolderPath))
+	if err != nil {
+		return fmt.Errorf("failed tar-gzip %s to %s remotely because %s", remoteFolderPath, tempFile, err)
+	}
+
+	err = c.DownloadFile(tempFile, tempFile)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_, _, _ = runCommand(fmt.Sprintf("rm -f '%s'", tempFile))
+	}()
+
+	err = os.MkdirAll(localFolderPath, 0o777)
+	if err != nil {
+		return fmt.Errorf("failed to create local path %s because %s", localFolderPath, err)
+	}
+
+	// TODO(initialed85): probably not portable
+	cmd := exec.Command("tar", "xzf", tempFile, "-C", localFolderPath)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed tar-gzip %s to %s locally because %s\n\n%s", localFolderPath, tempFile, err, out)
+	}
+
+	return nil
+}
+
+func (c *Connection) DownloadFolder(remoteFolderPath string, localFolderPath string) error {
+	return c.downloadFolder(remoteFolderPath, localFolderPath, c.RunCommand)
+}
+
+func (c *Connection) DownloadFolderWithSudo(remoteFolderPath string, localFolderPath string) error {
+	return c.downloadFolder(remoteFolderPath, localFolderPath, c.RunCommandWithSudo)
+}
+
+func (c *Connection) Download(remotePath string, localPath string) error {
+	_, _, err := c.RunCommand(fmt.Sprintf("test -e '%s'", remotePath))
+	if err != nil {
+		return fmt.Errorf("failed to download %s because %s", remotePath, err)
+	}
+
+	_, _, err = c.RunCommand(fmt.Sprintf("test -d '%s'", remotePath))
+	if err != nil {
+		return c.DownloadFile(remotePath, localPath)
+	}
+
+	return c.DownloadFolder(remotePath, localPath)
+}
+
+func (c *Connection) DownloadWithSudo(remotePath string, localPath string) error {
+	_, _, err := c.RunCommandWithSudo(fmt.Sprintf("test -e '%s'", remotePath))
+	if err != nil {
+		return fmt.Errorf("failed to download %s because %s", remotePath, err)
+	}
+
+	_, _, err = c.RunCommandWithSudo(fmt.Sprintf("test -d '%s'", remotePath))
+	if err != nil {
+		return c.DownloadFileWithSudo(remotePath, localPath)
+	}
+
+	return c.DownloadFolderWithSudo(remotePath, localPath)
 }

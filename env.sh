@@ -379,6 +379,9 @@ vagrant_restore() {
 		echo "env.sh: vagrant snapshot restore $VAGRANT_SNAPSHOT_NAME"
 		vagrant snapshot restore "$VAGRANT_SNAPSHOT_NAME"
 	fi
+	
+	# TODO(initialed85): because i'm too lazy to build something that polls
+	sleep 1
 }
 
 libvirt_snapshot() {

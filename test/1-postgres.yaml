@@ -1,7 +1,0 @@
-targets:
-  - user2:Password2@localhost:2221
-
-steps:
-  - script: |
-      apt-get update
-      apt-get install -y postgres

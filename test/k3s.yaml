@@ -1,0 +1,50 @@
+#
+# specs define the files to move around and scripts to execute
+#
+
+specs:
+  - name: k3s-master
+    with_sudo: true
+    steps:
+      - script: "@deploy-k3s-master.sh"
+        downloads:
+          - remote: /home/user2/.kube
+            local: /tmp/home-user2-dot-kube
+
+  - name: k3s-agent
+    with_sudo: true
+    steps:
+      - script: "@deploy-k3s-agent.sh"
+        downloads:
+          - local: /tmp/home-user2-dot-kube
+            remote: /home/user2/.kube
+
+#
+# pools define the targets
+#
+
+pools:
+  - name: k3s-master-nodes
+    targets:
+      - user2:Password2@192.168.56.11:22
+
+  - name: k3s-agent-nodes
+    targets:
+      - user2:Password2@192.168.56.12:22
+      - user2:Password2@192.168.56.13:22
+      - user2:Password2@192.168.56.14:22
+
+#
+# mappings relate specs to pools (note: top-level sequence affects deployment order)
+#
+
+mappings:
+  - spec:
+      name: "@k3s-master"
+    pools:
+      - name: "@k3s-master-nodes"
+
+  - spec:
+      name: "@k3s-agent"
+    pools:
+      - name: "@k3s-agent-nodes"
