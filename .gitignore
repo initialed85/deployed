@@ -1,3 +1,4 @@
 .vagrant
 docker-compose.restore.yaml
 docker-compose.restore.yaml.bak
+deployed

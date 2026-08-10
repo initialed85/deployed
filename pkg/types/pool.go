@@ -1,7 +1,6 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -53,16 +52,20 @@ type Pool struct {
 	Targets []string `yaml:"targets"`
 }
 
-func (p *Pool) Validate() error {
+func (p *Pool) GetName() string {
+	return p.Name
+}
+
+func (p *Pool) Validate(_ ...string) error {
 	p.Name = strings.TrimSpace(p.Name)
 	if p.Name == "" {
-		return errors.New("pool has empty name")
+		return fmt.Errorf("%T.name may not be empty", p)
 	}
 
 	for i, target := range p.Targets {
 		_, _, _, _, err := ParseTarget(target)
 		if err != nil {
-			return fmt.Errorf("pool.target[%d] is invalid because %s", i, err)
+			return fmt.Errorf("%T.target[%d] is invalid because %s", p, i, err)
 		}
 	}
 

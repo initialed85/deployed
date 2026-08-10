@@ -9,14 +9,14 @@ import (
 )
 
 type Mapping struct {
-	Spec  Spec   `yaml:"spec"`
-	Pools []Pool `yaml:"pools"`
+	Spec  *Spec   `yaml:"spec"`
+	Pools []*Pool `yaml:"pools"`
 }
 
 type Workspace struct {
 	rootPath string    `yaml:"-"`
-	Specs    []Spec    `yaml:"specs,omitempty"`
-	Pools    []Pool    `yaml:"pools,omitempty"`
+	Specs    []*Spec   `yaml:"specs,omitempty"`
+	Pools    []*Pool   `yaml:"pools,omitempty"`
 	Mappings []Mapping `yaml:"mappings"`
 }
 
@@ -44,40 +44,78 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 	// specs
 	//
 
-	specByName := make(map[string]Spec)
+	err := Validate(w.Specs, rootPaths...)
+	if err != nil {
+		return err
+	}
+
+	downloadsByName := make(map[string][]Download)
 
 	for i, spec := range w.Specs {
-		err := spec.Validate(w.rootPath)
-		if err != nil {
-			return fmt.Errorf("spec[%d]%s", i, err)
-		}
+		for j, step := range spec.Steps {
+			for _, download := range step.Downloads {
+				if len(download.Name) == 0 {
+					continue
+				}
 
-		_, existing := specByName[spec.Name]
-		if existing {
-			return fmt.Errorf("spec[%d] has name clash on %#+v with existing spec", i, spec.Name)
-		}
+				downloads, ok := downloadsByName[download.Name]
+				if !ok {
+					downloads = make([]Download, 0)
+				}
 
-		specByName[spec.Name] = spec
+				downloads = append(downloads, download)
+
+				downloadsByName[download.Name] = downloads
+			}
+
+			for k, upload := range step.Uploads {
+				if !strings.HasPrefix(upload.Local, "?") {
+					continue
+				}
+
+				uploadLocal := strings.TrimLeft(upload.Local, "?")
+
+				downloads, ok := downloadsByName[uploadLocal]
+				if !ok || len(downloads) == 0 {
+					return fmt.Errorf("%T[%d].%T[%d] refers to %#+v which has no candidates at this point", spec, i, step, j, upload.Local)
+				}
+
+				if len(downloads) > 1 {
+					return fmt.Errorf("%T[%d].%T[%d] refers to %#+v which has too many (%d) candidates at this point", spec, i, step, j, upload.Local, len(downloads))
+				}
+
+				upload.Local = downloads[0].Local
+
+				step.Uploads[k] = upload
+			}
+		}
+	}
+
+	specByName, unnamedSpecs, err := GroupByName(w.Specs)
+	if err != nil {
+		return err
+	}
+
+	if len(unnamedSpecs) > 0 {
+		return fmt.Errorf("found %d unnamed specs", len(unnamedSpecs))
 	}
 
 	//
 	// pools
 	//
 
-	poolByName := make(map[string]Pool)
+	err = Validate(w.Pools, rootPaths...)
+	if err != nil {
+		return err
+	}
 
-	for i, pool := range w.Pools {
-		err := pool.Validate()
-		if err != nil {
-			return fmt.Errorf("pool[%d]%s", i, err)
-		}
+	poolByName, unnamedPools, err := GroupByName(w.Pools)
+	if err != nil {
+		return err
+	}
 
-		_, existing := poolByName[pool.Name]
-		if existing {
-			return fmt.Errorf("pool[%#+v] has name clash with existing pool", pool.Name)
-		}
-
-		poolByName[pool.Name] = pool
+	if len(unnamedPools) > 0 {
+		return fmt.Errorf("found %d unnamed pools", len(unnamedPools))
 	}
 
 	//
@@ -85,38 +123,20 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 	//
 
 	for i, mapping := range w.Mappings {
-		if strings.HasPrefix(mapping.Spec.Name, "@") {
-			specName := strings.TrimLeft(mapping.Spec.Name, "@")
-
-			spec, ok := specByName[specName]
-			if !ok {
-				return fmt.Errorf("mapping[%d].spec.name %#+v is not in list of known specs", i, specName)
-			}
-
-			mapping.Spec = spec
-		} else {
-			err := mapping.Spec.Validate(w.rootPath)
-			if err != nil {
-				return fmt.Errorf("mapping[%d]%s", i, err)
-			}
+		spec, err := ResolveOrPassthru(mapping.Spec, specByName)
+		if err != nil {
+			return fmt.Errorf("%T.%s", spec, err)
 		}
 
+		mapping.Spec = spec
+
 		for j, pool := range mapping.Pools {
-			if strings.HasPrefix(pool.Name, "@") {
-				poolName := strings.TrimLeft(pool.Name, "@")
-
-				pool, ok := poolByName[poolName]
-				if !ok {
-					return fmt.Errorf("mapping[%d].pool[%d].name %#+v is not in list of known pools", i, j, poolName)
-				}
-
-				mapping.Pools[j] = pool
-			} else {
-				err := pool.Validate()
-				if err != nil {
-					return fmt.Errorf("mapping[%d]%s", i, err)
-				}
+			pool, err = ResolveOrPassthru(pool, poolByName)
+			if err != nil {
+				return fmt.Errorf("%T[%d].%s", pool, j, err)
 			}
+
+			mapping.Pools[j] = pool
 		}
 
 		w.Mappings[i] = mapping

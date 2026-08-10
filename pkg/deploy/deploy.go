@@ -39,10 +39,6 @@ func Deploy(deployment types.Deployment) (bool, error) {
 		_ = os.Remove(localHashPath)
 	}()
 
-	//
-	// TODO(initialed85): extract Target + related handling into a struct
-	//
-
 	username, password, host, port, err := types.ParseTarget(deployment.Target)
 	if err != nil {
 		return false, err
@@ -59,33 +55,75 @@ func Deploy(deployment types.Deployment) (bool, error) {
 
 	remoteHash := strings.TrimSpace(out)
 
-	if remoteHash == localHash {
-		log.Printf("deploy no-op (local hash and remote hash match)")
-		return false, nil
-	}
-
 	remoteAttemptedHashPath := fmt.Sprintf("%s.attempted-%s", deployment.HashFile(), deployment.ID)
 
-	err = c.UploadFile(localHashPath, remoteAttemptedHashPath)
-	if err != nil {
-		return false, err
+	if remoteHash != localHash {
+		err = c.UploadFile(localHashPath, remoteAttemptedHashPath)
+		if err != nil {
+			return false, err
+		}
 	}
 
 	tookAction := false
 
 	for i, step := range deployment.Spec.Steps {
-		//
-		// upload files / folders
-		//
+		if remoteHash != localHash {
+			//
+			// upload files / folders
+			//
 
-		err := func() error {
-			for _, uploads := range step.Uploads {
+			err := func() error {
+
+				for _, uploads := range step.Uploads {
+					withSudo := false
+
+					if deployment.ForceWithSudo == nil {
+						if uploads.WithSudo != nil {
+							withSudo = *uploads.WithSudo
+						} else if step.WithSudo != nil {
+							withSudo = *step.WithSudo
+						} else if deployment.Spec.WithSudo != nil {
+							withSudo = *deployment.Spec.WithSudo
+						}
+					} else {
+						withSudo = *deployment.ForceWithSudo
+					}
+
+					var upload func(string, string) error
+
+					if withSudo {
+						upload = c.UploadWithSudo
+					} else {
+						upload = c.Upload
+					}
+
+					err = upload(uploads.Local, uploads.Remote)
+					if err != nil {
+						return err
+					}
+
+					tookAction = true
+				}
+
+				return nil
+			}()
+			if err != nil {
+				return tookAction, fmt.Errorf("failed to execute step %d uploads because %s", i, err)
+			}
+
+			//
+			// run scripts
+			//
+
+			err = func() error {
+				if step.Script == "" {
+					return nil
+				}
+
 				withSudo := false
 
 				if deployment.ForceWithSudo == nil {
-					if uploads.WithSudo != nil {
-						withSudo = *uploads.WithSudo
-					} else if step.WithSudo != nil {
+					if step.WithSudo != nil {
 						withSudo = *step.WithSudo
 					} else if deployment.Spec.WithSudo != nil {
 						withSudo = *deployment.Spec.WithSudo
@@ -94,88 +132,46 @@ func Deploy(deployment types.Deployment) (bool, error) {
 					withSudo = *deployment.ForceWithSudo
 				}
 
-				var upload func(string, string) error
+				var runCommand func(string) (string, string, error)
 
 				if withSudo {
-					upload = c.UploadWithSudo
+					runCommand = c.RunCommandWithSudo
 				} else {
-					upload = c.Upload
+					runCommand = c.RunCommand
 				}
 
-				err = upload(uploads.Local, uploads.Remote)
+				localAndRemotePath := fmt.Sprintf("/tmp/deployed-%s-step-%d-script-%s.sh", deployment.Spec.GetName(), i, deployment.ID)
+
+				err = os.WriteFile(localAndRemotePath, []byte(step.Script), 0o777)
 				if err != nil {
 					return err
 				}
 
-				tookAction = true
-			}
+				defer func() {
+					_ = os.Remove(localAndRemotePath)
+				}()
 
-			return nil
-		}()
-		if err != nil {
-			return tookAction, fmt.Errorf("failed to execute step %d uploads because %s", i, err)
-		}
-
-		//
-		// run scripts
-		//
-
-		err = func() error {
-			if step.Script == "" {
-				return nil
-			}
-
-			withSudo := false
-
-			if deployment.ForceWithSudo == nil {
-				if step.WithSudo != nil {
-					withSudo = *step.WithSudo
-				} else if deployment.Spec.WithSudo != nil {
-					withSudo = *deployment.Spec.WithSudo
+				err = c.UploadFile(localAndRemotePath, localAndRemotePath)
+				if err != nil {
+					return err
 				}
-			} else {
-				withSudo = *deployment.ForceWithSudo
-			}
 
-			var runCommand func(string) (string, string, error)
+				defer func() {
+					_, _, _ = c.RunCommand(fmt.Sprintf("rm -f '%s' || true", localAndRemotePath))
+				}()
 
-			if withSudo {
-				runCommand = c.RunCommandWithSudo
-			} else {
-				runCommand = c.RunCommand
-			}
+				tookAction = true
 
-			localAndRemotePath := fmt.Sprintf("/tmp/deployed-%s-step-%d-script-%s.sh", deployment.Spec.Name, i, deployment.ID)
+				_, _, err := runCommand(localAndRemotePath)
+				if err != nil {
+					return err
+				}
 
-			err = os.WriteFile(localAndRemotePath, []byte(step.Script), 0o777)
-			if err != nil {
-				return err
-			}
-
-			defer func() {
-				_ = os.Remove(localAndRemotePath)
+				return nil
 			}()
-
-			err = c.UploadFile(localAndRemotePath, localAndRemotePath)
 			if err != nil {
-				return err
+				return tookAction, fmt.Errorf("failed to execute step %d script because %s", i, err)
 			}
-
-			defer func() {
-				_, _, _ = c.RunCommand(fmt.Sprintf("rm -f '%s' || true", localAndRemotePath))
-			}()
-
-			tookAction = true
-
-			_, _, err := runCommand(localAndRemotePath)
-			if err != nil {
-				return err
-			}
-
-			return nil
-		}()
-		if err != nil {
-			return tookAction, fmt.Errorf("failed to execute step %d script because %s", i, err)
 		}
 
 		//
@@ -217,6 +213,11 @@ func Deploy(deployment types.Deployment) (bool, error) {
 		if err != nil {
 			return tookAction, fmt.Errorf("failed to execute step %d downloads because %s", i, err)
 		}
+	}
+
+	if remoteHash == localHash {
+		log.Printf("deploy no-op (local hash and remote hash match)")
+		return false, nil
 	}
 
 	_, _, err = c.RunCommand(fmt.Sprintf("mv -fv %s %s", remoteAttemptedHashPath, remoteHashPath))

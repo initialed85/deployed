@@ -6,16 +6,20 @@ specs:
   - name: k3s-master
     with_sudo: true
     steps:
+      # prefixing with "@" means "read in this file"
       - script: "@deploy-k3s-master.sh"
         downloads:
-          - remote: /home/user2/.kube
+          # by naming a download, we can refer to it in any step of any spec, as long as it's already happened
+          - name: k3s-master-kubeconfig
+            remote: /home/user2/.kube
             local: /tmp/home-user2-dot-kube
 
   - name: k3s-agent
     with_sudo: true
     steps:
       - uploads:
-          - local: /tmp/home-user2-dot-kube
+          # prefixing with "?" means "refer to the download of this name"
+          - local: "?k3s-master-kubeconfig"
             remote: /home/user2/.kube
         script: "@deploy-k3s-agent.sh"
 

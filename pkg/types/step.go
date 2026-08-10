@@ -21,6 +21,10 @@ func (s *Step) Validate(rootPaths ...string) error {
 	}
 
 	for i, upload := range s.Uploads {
+		if strings.HasPrefix(upload.Local, "?") {
+			continue
+		}
+
 		_, err := os.Stat(upload.Local)
 		if err != nil {
 			return fmt.Errorf("script.uploads[%d] refers to local file %#+v that does not exist", i, upload.Local)

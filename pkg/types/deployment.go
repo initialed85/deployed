@@ -12,7 +12,7 @@ var zeroUUIDString = zeroUUID.String()
 type Deployment struct {
 	ID            uuid.UUID `yaml:"id"`
 	ForceWithSudo *bool     `yaml:"force_sudo,omitempty"` // non-nil will override
-	Spec          Spec      `yaml:"spec"`
+	Spec          *Spec     `yaml:"spec"`
 	Target        string    `yaml:"target"`
 }
 
@@ -38,5 +38,5 @@ func (d *Deployment) Hash() (string, error) {
 }
 
 func (d *Deployment) HashFile() string {
-	return fmt.Sprintf("deployed-%s-hash.txt", d.Spec.Name)
+	return fmt.Sprintf("deployed-%s-hash.txt", d.Spec.GetName())
 }

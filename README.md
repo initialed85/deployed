@@ -26,7 +26,9 @@ A simple way to provision software on Linux servers, via SSH.
 - Deployment
   - The mapping of a Spec to a Target
 
-## Plan of attack
+## Tasks
+
+### Roadmap
 
 - [WIP] Build SSH layer
   - [DONE] Be able to run commands
@@ -46,11 +48,41 @@ A simple way to provision software on Linux servers, via SSH.
   - [DONE] Be able to define Pools (collection of Targets)
   - [DONE] Be able to define Mappings (of Pools to Specs)
   - [DONE] Have it all driven by YAML files
-  - [TODO] Expose workspace layer via an app entrypoint
+  - [DONE] Expose workspace layer via an app entrypoint
+  - [TODO] Split screen log monitor (lazy tmux?)
+- [TODO] Support for SSH keys as well as passwords (how will this work with sudo?)
+
+### Debt
+
+- [TODO] Bundle the state in once place locally and remotely
+
+### Bugs
+
+- [TODO] Deal with potential local file path collisions for named downloads
+
+## Usage
+
+See [test/k3s.yaml](test/k3s.yaml) for an example configuration (this is used by the tests).
+
+Assuming you've already built with `go build -o ./deployed .`:
+
+```shell
+./deployed rollout test/k3s.yaml
+```
+
+The master node will deploy first, followed by the agent nodes (concurrently).
+
+The Kube config will be pulled back to `/tmp/home-user2-dot-kube/config` so you can run something like this:
+
+```shell
+KUBECONFIG=/tmp/home-user2-dot-kube/config kubectl get -o wide nodes
+```
+
+The same Kube config is pushed out to all agents so they can use `kubectl` as well.
 
 ## Dev notes
 
-The tooling (e.g. `env.sh` and related) is largely vibe-coded; so if it breaks or doesn't work for a given platform, just pull the slot machine handle until it works again (vibe code it some more).
+The tooling (i.e. `env.sh` and related) is largely vibe-coded; so if it breaks or doesn't work for a given platform, just pull the slot machine handle until it works again (vibe code it some more).
 
 The intention is to not use AI for any of the actual code (`AGENTS.md` should reflect this).
 
