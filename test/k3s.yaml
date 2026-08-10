@@ -14,10 +14,10 @@ specs:
   - name: k3s-agent
     with_sudo: true
     steps:
-      - script: "@deploy-k3s-agent.sh"
-        downloads:
+      - uploads:
           - local: /tmp/home-user2-dot-kube
             remote: /home/user2/.kube
+        script: "@deploy-k3s-agent.sh"
 
 #
 # pools define the targets

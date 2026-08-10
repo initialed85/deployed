@@ -10,10 +10,10 @@ var zeroUUID = uuid.UUID{}
 var zeroUUIDString = zeroUUID.String()
 
 type Deployment struct {
-	ID       uuid.UUID `yaml:"id"`
-	WithSudo *bool     `yaml:"with_sudo,omitempty"` // non-nil will override
-	Spec     Spec      `yaml:"spec"`
-	Target   string    `yaml:"target"`
+	ID            uuid.UUID `yaml:"id"`
+	ForceWithSudo *bool     `yaml:"force_sudo,omitempty"` // non-nil will override
+	Spec          Spec      `yaml:"spec"`
+	Target        string    `yaml:"target"`
 }
 
 func (d *Deployment) Validate() {
@@ -28,10 +28,10 @@ func (d *Deployment) Hash() (string, error) {
 	}
 
 	c := Deployment{
-		ID:       zeroUUID,
-		WithSudo: d.WithSudo,
-		Spec:     d.Spec,
-		Target:   d.Target,
+		ID:            zeroUUID,
+		ForceWithSudo: d.ForceWithSudo,
+		Spec:          d.Spec,
+		Target:        d.Target,
 	}
 
 	return Hash(c)

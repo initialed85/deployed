@@ -9,17 +9,17 @@ A simple way to provision software on Linux servers, via SSH.
 ### Configuration
 
 - Step
-	- Some files or folders to transfer
-	- A script to run
+  - Some files or folders to transfer
+  - A script to run
 - Spec
-	- A collection of Steps
+  - A collection of Steps
 - Target
-	- A machine to provision (via SSH)
+  - A machine to provision (via SSH)
 - Pool
-	- A collection of Targets
+  - A collection of Targets
 - Workspace
-	- A collection of Pools
-	- The mapping of Pools to a Spec
+  - A collection of Pools
+  - The mapping of Pools to a Spec
 
 ## Runtime
 
@@ -28,7 +28,7 @@ A simple way to provision software on Linux servers, via SSH.
 
 ## Plan of attack
 
-- [DONE] Build SSH layer
+- [WIP] Build SSH layer
   - [DONE] Be able to run commands
   - [DONE] Be able to run commands with sudo
   - [DONE] Be able to transfer files via SCP
@@ -39,8 +39,14 @@ A simple way to provision software on Linux servers, via SSH.
 - [WIP] Build deployment layer
   - [DONE] Be able to run a number of Steps against a Target
   - [DONE] Store a hash of the last run Steps on a Target for idempotency
-  - [TODO] Be able to transfer a number of files or folders to a Target
+  - [DONE] Be able to transfer a number of files or folders to a Target
   - [TODO] Expose deployment layer via an app entrypoint
+- [WIP] Build workspace layer
+  - [DONE] Be able to define Specs (collection of Steps)
+  - [DONE] Be able to define Pools (collection of Targets)
+  - [DONE] Be able to define Mappings (of Pools to Specs)
+  - [DONE] Have it all driven by YAML files
+  - [TODO] Expose workspace layer via an app entrypoint
 
 ## Dev notes
 

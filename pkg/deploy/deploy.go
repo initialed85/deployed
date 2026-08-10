@@ -82,7 +82,7 @@ func Deploy(deployment types.Deployment) (bool, error) {
 			for _, uploads := range step.Uploads {
 				withSudo := false
 
-				if deployment.WithSudo == nil {
+				if deployment.ForceWithSudo == nil {
 					if uploads.WithSudo != nil {
 						withSudo = *uploads.WithSudo
 					} else if step.WithSudo != nil {
@@ -91,7 +91,7 @@ func Deploy(deployment types.Deployment) (bool, error) {
 						withSudo = *deployment.Spec.WithSudo
 					}
 				} else {
-					withSudo = *deployment.WithSudo
+					withSudo = *deployment.ForceWithSudo
 				}
 
 				var upload func(string, string) error
@@ -127,14 +127,14 @@ func Deploy(deployment types.Deployment) (bool, error) {
 
 			withSudo := false
 
-			if deployment.WithSudo == nil {
+			if deployment.ForceWithSudo == nil {
 				if step.WithSudo != nil {
 					withSudo = *step.WithSudo
 				} else if deployment.Spec.WithSudo != nil {
 					withSudo = *deployment.Spec.WithSudo
 				}
 			} else {
-				withSudo = *deployment.WithSudo
+				withSudo = *deployment.ForceWithSudo
 			}
 
 			var runCommand func(string) (string, string, error)
@@ -186,7 +186,7 @@ func Deploy(deployment types.Deployment) (bool, error) {
 			for _, downloads := range step.Downloads {
 				withSudo := false
 
-				if deployment.WithSudo == nil {
+				if deployment.ForceWithSudo == nil {
 					if downloads.WithSudo != nil {
 						withSudo = *downloads.WithSudo
 					} else if step.WithSudo != nil {
@@ -195,7 +195,7 @@ func Deploy(deployment types.Deployment) (bool, error) {
 						withSudo = *deployment.Spec.WithSudo
 					}
 				} else {
-					withSudo = *deployment.WithSudo
+					withSudo = *deployment.ForceWithSudo
 				}
 
 				var download func(string, string) error
