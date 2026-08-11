@@ -30,6 +30,14 @@ A simple way to provision software on Linux servers, via SSH.
 
 ### Roadmap
 
+- [WIP] Build local layer
+  - [DONE] Be able to run commands
+  - [DONE] Be able to run commands with sudo
+  - [DONE] Be able to copy files
+  - [DONE] Be able to copy files and move them to a privileged location with sudo
+  - [DONE] Be able to copy folders
+  - [DONE] Be able to copy folders and move them to a privileged location with sudo
+  - [TODO] Expose local layer via an app entrypoint (as a low-level escape hatch)
 - [WIP] Build SSH layer
   - [DONE] Be able to run commands
   - [DONE] Be able to run commands with sudo
@@ -41,24 +49,38 @@ A simple way to provision software on Linux servers, via SSH.
 - [WIP] Build deployment layer
   - [DONE] Be able to run a number of Steps against a Target
   - [DONE] Store a hash of the last run Steps on a Target for idempotency
-  - [DONE] Be able to transfer a number of files or folders to a Target
+  - [DONE] Be able to specify one or more Upload files or folders for a Target
+  - [DONE] Be able to specify one or more Download files or folders for a Target
   - [TODO] Expose deployment layer via an app entrypoint
 - [WIP] Build workspace layer
   - [DONE] Be able to define Specs (collection of Steps)
   - [DONE] Be able to define Pools (collection of Targets)
   - [DONE] Be able to define Mappings (of Pools to Specs)
   - [DONE] Have it all driven by YAML files
+  - [DONE] Support naming Downloads
   - [DONE] Expose workspace layer via an app entrypoint
   - [TODO] Split screen log monitor (lazy tmux?)
-- [TODO] Support for SSH keys as well as passwords (how will this work with sudo?)
+  - [TODO] Cross-session env var support
+    - [TODO] Inject some useful implicit ones; e.g. `DEPLOYED_META_HOST`, `DEPLOYED_META_USER`, `DEPLOYED_META_OS`, `DEPLOYED_META_ARCH`
+    - [TODO] Support exporting and reusing private dynamic env vars e.g. `DEPLOYED_PRIVATE_*` (protected from duplicate clashes)
+      - Available during the entire rollout, once exported
+      - Locally scoped by target
+    - [TODO] Support exporting and reusing public dynamic env vars e.g. `DEPLOYED_PUBLIC_*` (protected from duplicate clashes, exported to host env on completion)
+      - Available during the entire rollout, once exported
+      - Globally scoped
 
 ### Debt
 
 - [TODO] Bundle the state in once place locally and remotely
+- [TODO] Fix portability issues re: some reliance on shell commands locally / remotely
+- [TODO] Have `env.sh` wait until env is ready with a poll (instead of a 1s sleep)
+- [TODO] Support for SSH keys as well as passwords (how will this work with sudo?)
+- [TODO] Don't just stub out SSH host key validation
+- [TODO] Fix the hacked in ${USER} env handling
 
 ### Bugs
 
-- [TODO] Deal with potential local file path collisions for named downloads
+- [DONE] Deal with potential local file path collisions for named downloads
 
 ## Usage
 

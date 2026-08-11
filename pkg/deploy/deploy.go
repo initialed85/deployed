@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/initialed85/deployed/pkg/local"
 	"github.com/initialed85/deployed/pkg/ssh"
 	"github.com/initialed85/deployed/pkg/types"
 )
@@ -44,10 +45,21 @@ func Deploy(deployment types.Deployment) (bool, error) {
 		return false, err
 	}
 
-	c, err := ssh.Connect(host, int(port), username, password)
-	if err != nil {
-		return false, err
+	var c Deployable
+
+	if port > 0 {
+		c, err = ssh.Connect(host, int(port), username, password)
+		if err != nil {
+			return false, err
+		}
+	} else {
+		c, err = local.Connect(host, int(port), username, password)
+		if err != nil {
+			return false, err
+		}
 	}
+
+	defer c.Close()
 
 	remoteHashPath := deployment.HashFile()
 
@@ -58,7 +70,7 @@ func Deploy(deployment types.Deployment) (bool, error) {
 	remoteAttemptedHashPath := fmt.Sprintf("%s.attempted-%s", deployment.HashFile(), deployment.ID)
 
 	if remoteHash != localHash {
-		err = c.UploadFile(localHashPath, remoteAttemptedHashPath)
+		err = c.Upload(localHashPath, remoteAttemptedHashPath)
 		if err != nil {
 			return false, err
 		}
@@ -151,7 +163,7 @@ func Deploy(deployment types.Deployment) (bool, error) {
 					_ = os.Remove(localAndRemotePath)
 				}()
 
-				err = c.UploadFile(localAndRemotePath, localAndRemotePath)
+				err = c.Upload(localAndRemotePath, localAndRemotePath)
 				if err != nil {
 					return err
 				}

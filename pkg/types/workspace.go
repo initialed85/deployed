@@ -44,12 +44,13 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 	// specs
 	//
 
-	err := Validate(w.Specs, rootPaths...)
+	err := ValidateMany(w.Specs, rootPaths...)
 	if err != nil {
 		return err
 	}
 
 	downloadsByName := make(map[string][]Download)
+	downloadsByLocal := make(map[string][]Download)
 
 	for i, spec := range w.Specs {
 		for j, step := range spec.Steps {
@@ -58,14 +59,23 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 					continue
 				}
 
-				downloads, ok := downloadsByName[download.Name]
+				downloadsForName, ok := downloadsByName[download.Name]
 				if !ok {
-					downloads = make([]Download, 0)
+					downloadsForName = make([]Download, 0)
 				}
 
-				downloads = append(downloads, download)
+				downloadsForName = append(downloadsForName, download)
 
-				downloadsByName[download.Name] = downloads
+				downloadsByName[download.Name] = downloadsForName
+
+				downloadsForLocal, ok := downloadsByLocal[download.Local]
+				if !ok {
+					downloadsForLocal = make([]Download, 0)
+				}
+
+				downloadsForLocal = append(downloadsForLocal, download)
+
+				downloadsByLocal[download.Local] = downloadsForLocal
 			}
 
 			for k, upload := range step.Uploads {
@@ -77,11 +87,17 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 
 				downloads, ok := downloadsByName[uploadLocal]
 				if !ok || len(downloads) == 0 {
-					return fmt.Errorf("%T[%d].%T[%d] refers to %#+v which has no candidates at this point", spec, i, step, j, upload.Local)
+					return fmt.Errorf(
+						"specs[%d].steps[%d].uploads[%d] refers to download %#+v which has no candidates by the time its referenced (the deployment sequence up until this download being referenced has not caused this download to happen)",
+						i, j, k, upload.Local,
+					)
 				}
 
 				if len(downloads) > 1 {
-					return fmt.Errorf("%T[%d].%T[%d] refers to %#+v which has too many (%d) candidates at this point", spec, i, step, j, upload.Local, len(downloads))
+					return fmt.Errorf(
+						"specs[%d].steps[%d].uploads[%d]  refers to download %#+v which has too many (%d) candidates at this point (the deployment seqeuence up until this download being referenced has caused duplicate download names)",
+						i, j, k, upload.Local, len(downloads),
+					)
 				}
 
 				upload.Local = downloads[0].Local
@@ -89,6 +105,20 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 				step.Uploads[k] = upload
 			}
 		}
+	}
+
+	downloadsByLocalErrorMsgs := make([]string, 0)
+
+	for local, downloads := range downloadsByLocal {
+		if len(downloads) <= 1 {
+			continue
+		}
+
+		downloadsByLocalErrorMsgs = append(downloadsByLocalErrorMsgs, fmt.Sprintf("- %#+v is referred to %d times", local, len(downloads)))
+	}
+
+	if len(downloadsByLocalErrorMsgs) > 0 {
+		return fmt.Errorf("one or more downloads have conflicting local file names (which would be overwritten throughout the rollout)\n\n%s", strings.Join(downloadsByLocalErrorMsgs, "\n"))
 	}
 
 	specByName, unnamedSpecs, err := GroupByName(w.Specs)
@@ -104,7 +134,7 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 	// pools
 	//
 
-	err = Validate(w.Pools, rootPaths...)
+	err = ValidateMany(w.Pools, rootPaths...)
 	if err != nil {
 		return err
 	}
@@ -125,7 +155,7 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 	for i, mapping := range w.Mappings {
 		spec, err := ResolveOrPassthru(mapping.Spec, specByName)
 		if err != nil {
-			return fmt.Errorf("%T.%s", spec, err)
+			return fmt.Errorf("mappings.spec.%s", err)
 		}
 
 		mapping.Spec = spec
@@ -133,13 +163,36 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 		for j, pool := range mapping.Pools {
 			pool, err = ResolveOrPassthru(pool, poolByName)
 			if err != nil {
-				return fmt.Errorf("%T[%d].%s", pool, j, err)
+				return fmt.Errorf("mappings.pools[%d].%s", j, err)
 			}
 
 			mapping.Pools[j] = pool
 		}
 
 		w.Mappings[i] = mapping
+	}
+
+	for i, mapping := range w.Mappings {
+		existingTargets := make(map[string]struct{})
+
+		for j, pool := range mapping.Pools {
+			adjustedTargets := make([]string, 0)
+
+			for k, target := range pool.Targets {
+				_, existing := existingTargets[target]
+				if existing {
+					log.Printf(
+						"warning: mappings[%d].pools[%d].targets[%d] mentions target %s which has already been seen (i.e. it is a duplicate for this spec); it will be excluded",
+						i, j, k, target,
+					)
+					continue
+				}
+
+				existingTargets[target] = struct{}{}
+
+				adjustedTargets = append(adjustedTargets, target)
+			}
+		}
 	}
 
 	return nil

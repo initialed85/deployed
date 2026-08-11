@@ -36,9 +36,9 @@ type Connection struct {
 	tag               string
 	clientMu          *sync.Mutex
 	sessionMu         *sync.Mutex
-	stdout            io.Reader
-	stderr            io.Reader
-	stdin             io.Writer
+	stdoutPipe        io.Reader
+	stderrPipe        io.Reader
+	stdinPipe         io.Writer
 }
 
 func Connect(host string, port int, username string, password string) (*Connection, error) {
@@ -55,11 +55,11 @@ func Connect(host string, port int, username string, password string) (*Connecti
 			fmt.Sprintf("Connection{%s} ", tag),
 			log.Ldate|log.Ltime|log.Lmicroseconds|log.LUTC|log.Lmsgprefix,
 		),
-		clientMu:  new(sync.Mutex),
-		sessionMu: new(sync.Mutex),
-		stdout:    bytes.NewBuffer(nil),
-		stderr:    bytes.NewBuffer(nil),
-		stdin:     bytes.NewBuffer(nil),
+		clientMu:   new(sync.Mutex),
+		sessionMu:  new(sync.Mutex),
+		stdoutPipe: bytes.NewBuffer(nil),
+		stderrPipe: bytes.NewBuffer(nil),
+		stdinPipe:  bytes.NewBuffer(nil),
 	}
 
 	c.SSHConfig = &ssh.ClientConfig{}
@@ -158,6 +158,102 @@ func (c *Connection) Close() {
 	c.logger.Printf("closed.")
 }
 
+func (c *Connection) LocalRunCommand(command string) (string, string, error) {
+	cmd := exec.Command("bash", "-c", command)
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", "", err
+	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return "", "", err
+	}
+
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return "", "", err
+	}
+
+	defer func() {
+		_ = stdoutPipe.Close()
+		_ = stderrPipe.Close()
+		_ = stdinPipe.Close()
+	}()
+
+	wg := new(sync.WaitGroup)
+
+	wg.Add(1)
+	stdout := strings.Builder{}
+	go func() {
+		defer wg.Done()
+
+		r := bufio.NewScanner(stdoutPipe)
+		for {
+			if !r.Scan() {
+				break
+			}
+
+			line := r.Text()
+			c.logger.Printf("LO <<< %s", line)
+			stdout.WriteString(line)
+			stdout.WriteRune('\n')
+		}
+
+		err := r.Err()
+		if err != nil {
+			c.logger.Printf("warning: stdout scanner experienced error %s", err)
+		}
+
+		b, _ := io.ReadAll(stdoutPipe)
+		stdout.Write(b)
+	}()
+
+	wg.Add(1)
+	stderr := strings.Builder{}
+	go func() {
+		defer wg.Done()
+
+		r := bufio.NewScanner(stderrPipe)
+		for {
+			if !r.Scan() {
+				break
+			}
+
+			line := r.Text()
+			c.logger.Printf("LE <<< %s", line)
+			stderr.WriteString(line)
+			stderr.WriteRune('\n')
+		}
+
+		err := r.Err()
+		if err != nil {
+			c.logger.Printf("warning: stderr scanner experienced error %s", err)
+		}
+
+		b, _ := io.ReadAll(stderrPipe)
+		stderr.Write(b)
+	}()
+
+	c.logger.Printf("LI >>> %s", command)
+	err = cmd.Run()
+
+	defer func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	}()
+
+	wg.Wait()
+
+	if err != nil {
+		return stdout.String(), stderr.String(), fmt.Errorf("failed to run command %#+v because %s; stderr: ...\n\n%s", command, err, stderr.String())
+	}
+
+	return stdout.String(), stderr.String(), nil
+}
+
 func (c *Connection) RunCommand(command string) (string, string, error) {
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
@@ -170,17 +266,17 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 	}
 	defer c.SSHSession.Close()
 
-	c.stdout, err = c.SSHSession.StdoutPipe()
+	c.stdoutPipe, err = c.SSHSession.StdoutPipe()
 	if err != nil {
 		return "", "", err
 	}
 
-	c.stderr, err = c.SSHSession.StderrPipe()
+	c.stderrPipe, err = c.SSHSession.StderrPipe()
 	if err != nil {
 		return "", "", err
 	}
 
-	c.stdin, err = c.SSHSession.StdinPipe()
+	c.stdinPipe, err = c.SSHSession.StdinPipe()
 	if err != nil {
 		return "", "", err
 	}
@@ -192,14 +288,14 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 	go func() {
 		defer wg.Done()
 
-		r := bufio.NewScanner(c.stdout)
+		r := bufio.NewScanner(c.stdoutPipe)
 		for {
 			if !r.Scan() {
 				break
 			}
 
 			line := r.Text()
-			c.logger.Printf("O <<< %s", line)
+			c.logger.Printf("RO <<< %s", line)
 			stdout.WriteString(line)
 			stdout.WriteRune('\n')
 		}
@@ -209,7 +305,7 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 			c.logger.Printf("warning: stdout scanner experienced error %s", err)
 		}
 
-		b, _ := io.ReadAll(c.stdout)
+		b, _ := io.ReadAll(c.stdoutPipe)
 		stdout.Write(b)
 	}()
 
@@ -218,14 +314,14 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 	go func() {
 		defer wg.Done()
 
-		r := bufio.NewScanner(c.stderr)
+		r := bufio.NewScanner(c.stderrPipe)
 		for {
 			if !r.Scan() {
 				break
 			}
 
 			line := r.Text()
-			c.logger.Printf("E <<< %s", line)
+			c.logger.Printf("RE <<< %s", line)
 			stderr.WriteString(line)
 			stderr.WriteRune('\n')
 		}
@@ -235,18 +331,15 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 			c.logger.Printf("warning: stderr scanner experienced error %s", err)
 		}
 
-		b, _ := io.ReadAll(c.stderr)
+		b, _ := io.ReadAll(c.stderrPipe)
 		stderr.Write(b)
 	}()
 
-	c.logger.Printf("I >>> %s", command)
+	c.logger.Printf("RI >>> %s", command)
 	err = c.SSHSession.Run(command)
 
 	_ = c.SSHSession.Close()
 
-	// Wait for both reader goroutines to drain their pipes before reading the
-	// accumulated output, whether Run succeeded or failed- otherwise we race
-	// their writes and can return partial (or empty) output.
 	wg.Wait()
 
 	if err != nil {
@@ -273,6 +366,8 @@ func (c *Connection) RunCommandWithSudo(command string) (string, string, error) 
 }
 
 func (c *Connection) UploadFile(localFilePath string, remoteFilePath string) error {
+	c.logger.Printf("uploading file %#+v to %#+v", localFilePath, remoteFilePath)
+
 	stat, err := os.Stat(localFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to upload %s to %s:%s because %s", localFilePath, c.tag, remoteFilePath, err)
@@ -294,6 +389,10 @@ func (c *Connection) UploadFile(localFilePath string, remoteFilePath string) err
 		return fmt.Errorf("failed to upload %s to %s:%s because %s", localFilePath, c.tag, remoteFilePath, err)
 	}
 
+	_, _, _ = c.RunCommand(fmt.Sprintf("ls -al %#+v", remoteFilePath))
+
+	c.logger.Printf("uploaded %d byte file %#+v to %#+v", stat.Size(), localFilePath, remoteFilePath)
+
 	return nil
 }
 
@@ -302,11 +401,13 @@ func (c *Connection) UploadFileWithSudo(localFilePath string, remoteFilePath str
 		return c.UploadFile(localFilePath, remoteFilePath)
 	}
 
+	tempFile := fmt.Sprintf("/tmp/deployed-upload-file-%s.tmp", uuid.Must(uuid.NewRandom()))
+
+	c.logger.Printf("uploading file %#+v to %#+v and then moving to %#+v with sudo", localFilePath, tempFile, remoteFilePath)
+
 	if !c.CanSudo {
 		return fmt.Errorf("this session cannot sudo (cannot move file after upload)")
 	}
-
-	tempFile := fmt.Sprintf("/tmp/deployed-upload-file-%s.tmp", uuid.Must(uuid.NewRandom()))
 
 	err := c.UploadFile(localFilePath, tempFile)
 	if err != nil {
@@ -318,21 +419,23 @@ func (c *Connection) UploadFileWithSudo(localFilePath string, remoteFilePath str
 		return err
 	}
 
+	_, _, _ = c.RunCommandWithSudo(fmt.Sprintf("ls -al %#+v", remoteFilePath))
+
 	return nil
 }
 
 func (c *Connection) uploadFolder(localFolderPath string, remoteFolderPath string, runCommand func(string) (string, string, error)) error {
-	remoteFolderPath = strings.TrimRight(remoteFolderPath, "/")
 	localFolderPath = strings.TrimRight(localFolderPath, "/")
+	remoteFolderPath = strings.TrimRight(remoteFolderPath, "/")
 
 	tempFile := fmt.Sprintf("/tmp/deployed-upload-folder-%s.tar.gz", uuid.Must(uuid.NewRandom()))
 
-	// TODO(initialed85): probably not portable
-	cmd := exec.Command("tar", "czf", tempFile, "-C", localFolderPath, ".")
+	c.logger.Printf("gzipping folder %#+v to %#+v, then uploading and extracting to %#+v", localFolderPath, tempFile, remoteFolderPath)
 
-	out, err := cmd.CombinedOutput()
+	// TODO(initialed85): probably not portable
+	_, _, err := c.LocalRunCommand(fmt.Sprintf("tar czvf '%s' -C '%s' .", tempFile, localFolderPath))
 	if err != nil {
-		return fmt.Errorf("failed tar-gzip %s to %s locally because %s\n\n%s", localFolderPath, tempFile, err, out)
+		return fmt.Errorf("failed tar-gzip %s to %s locally because %s", localFolderPath, tempFile, err)
 	}
 
 	defer func() {
@@ -350,10 +453,12 @@ func (c *Connection) uploadFolder(localFolderPath string, remoteFolderPath strin
 	}
 
 	// TODO(initialed85): probably not portable
-	_, _, err = runCommand(fmt.Sprintf("tar xzf '%s' -C '%s'", tempFile, remoteFolderPath))
+	_, _, err = runCommand(fmt.Sprintf("tar xzvf '%s' -C '%s'", tempFile, remoteFolderPath))
 	if err != nil {
 		return fmt.Errorf("failed to un-tar-gzip %s to %s remotely because %s", tempFile, remoteFolderPath, err)
 	}
+
+	_, _, _ = c.RunCommand(fmt.Sprintf("ls -alR %#+v", remoteFolderPath))
 
 	return nil
 }
@@ -393,6 +498,8 @@ func (c *Connection) UploadWithSudo(localPath string, remotePath string) error {
 }
 
 func (c *Connection) DownloadFile(remoteFilePath string, localFilePath string) error {
+	c.logger.Printf("downloading file %#+v to %#+v", remoteFilePath, localFilePath)
+
 	f, err := os.Create(localFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to download %s:%s from %s because %s", c.tag, remoteFilePath, localFilePath, err)
@@ -420,6 +527,8 @@ func (c *Connection) DownloadFileWithSudo(remoteFilePath string, localFilePath s
 	}
 
 	tempFile := fmt.Sprintf("/tmp/deployed-download-file-%s.tmp", uuid.Must(uuid.NewRandom()))
+
+	c.logger.Printf("copying file %#+v to %#+v with sudo and then downloading to %#+v", remoteFilePath, tempFile, localFilePath)
 
 	_, _, err := c.RunCommandWithSudo(fmt.Sprintf("cp '%s' '%s'", remoteFilePath, tempFile))
 	if err != nil {
@@ -449,8 +558,10 @@ func (c *Connection) downloadFolder(remoteFolderPath string, localFolderPath str
 
 	tempFile := fmt.Sprintf("/tmp/deployed-download-folder-%s.tar.gz", uuid.Must(uuid.NewRandom()))
 
+	c.logger.Printf("gzipping folder %#+v to %#+v, then downloading and extracting to %#+v", remoteFolderPath, tempFile, localFolderPath)
+
 	// TODO(initialed85): probably not portable
-	_, _, err := runCommand(fmt.Sprintf("tar czf '%s' -C '%s' '.'", tempFile, remoteFolderPath))
+	_, _, err := runCommand(fmt.Sprintf("tar czvf '%s' -C '%s' '.'", tempFile, remoteFolderPath))
 	if err != nil {
 		return fmt.Errorf("failed tar-gzip %s to %s remotely because %s", remoteFolderPath, tempFile, err)
 	}
@@ -470,11 +581,9 @@ func (c *Connection) downloadFolder(remoteFolderPath string, localFolderPath str
 	}
 
 	// TODO(initialed85): probably not portable
-	cmd := exec.Command("tar", "xzf", tempFile, "-C", localFolderPath)
-
-	out, err := cmd.CombinedOutput()
+	_, _, err = c.LocalRunCommand(fmt.Sprintf("tar xzvf '%s' -C '%s'", tempFile, localFolderPath))
 	if err != nil {
-		return fmt.Errorf("failed tar-gzip %s to %s locally because %s\n\n%s", localFolderPath, tempFile, err, out)
+		return fmt.Errorf("failed tar-gzip %s to %s locally because %s", localFolderPath, tempFile, err)
 	}
 
 	return nil

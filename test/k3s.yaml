@@ -23,6 +23,12 @@ specs:
             remote: /home/user2/.kube
         script: "@deploy-k3s-agent.sh"
 
+  - name: k3s-kubeconfig
+    steps:
+      - uploads:
+          - local: /tmp/home-user2-dot-kube/config
+            remote: /home/${USER}/.kube/config-other
+
 #
 # pools define the targets
 #
@@ -38,6 +44,10 @@ pools:
       - user2:Password2@192.168.56.13:22
       - user2:Password2@192.168.56.14:22
 
+  - name: local
+    targets:
+      - ${USER}:${PASS}@localhost:0
+
 #
 # mappings relate specs to pools (note: top-level sequence affects deployment order)
 #
@@ -52,3 +62,8 @@ mappings:
       name: "@k3s-agent"
     pools:
       - name: "@k3s-agent-nodes"
+
+  - spec:
+      name: "@k3s-kubeconfig"
+    pools:
+      - name: "@local"

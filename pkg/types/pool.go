@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -59,13 +60,13 @@ func (p *Pool) GetName() string {
 func (p *Pool) Validate(_ ...string) error {
 	p.Name = strings.TrimSpace(p.Name)
 	if p.Name == "" {
-		return fmt.Errorf("%T.name may not be empty", p)
+		return errors.New("pool.name may not be empty")
 	}
 
 	for i, target := range p.Targets {
 		_, _, _, _, err := ParseTarget(target)
 		if err != nil {
-			return fmt.Errorf("%T.target[%d] is invalid because %s", p, i, err)
+			return fmt.Errorf("pool.targets[%d] is invalid because %s", i, err)
 		}
 	}
 

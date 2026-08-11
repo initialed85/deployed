@@ -10,13 +10,22 @@ type Validated interface {
 	Validate(...string) error
 }
 
-func Validate[T Validated](items []T, extras ...string) error {
-	for i, item := range items {
-		err := item.Validate(extras...)
-		if err != nil {
-			b, _ := yaml.Marshal(item)
+func ValidateOne[T Validated](item T, extras ...string) error {
+	err := item.Validate(extras...)
+	if err != nil {
+		b, _ := yaml.Marshal(item)
 
-			return fmt.Errorf("%T[%d] failed validation because %s\n\n%s", item, i, err, string(b))
+		return fmt.Errorf("%s\n\n%s", err, string(b))
+	}
+
+	return nil
+}
+
+func ValidateMany[T Validated](items []T, extras ...string) error {
+	for i, item := range items {
+		err := ValidateOne(item)
+		if err != nil {
+			return fmt.Errorf("%T[%d] %s", item, i, err)
 		}
 	}
 

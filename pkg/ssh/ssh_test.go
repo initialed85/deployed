@@ -206,7 +206,7 @@ func TestSSH(t *testing.T) {
 		require.NotEmpty(t, stderr)
 
 		err = c.Upload("/tmp/some-file.txt", "/var/log/weird-file.txt")
-		require.Error(t, err)
+		require.Error(t, err, `warning: this test will only pass the first time- you probably want to run "./env.sh restore" first or run your tests with "./test.sh restore""`)
 
 		err = c.UploadWithSudo("/tmp/some-file.txt", "/var/log/weird-file.txt")
 		require.NoError(t, err)

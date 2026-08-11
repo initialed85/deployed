@@ -52,7 +52,7 @@ chown -fR ${USER}:${USER} /home/user2/.kube
 
 		tookAction, err := Deploy(deployment)
 		require.NoError(t, err)
-		require.True(t, tookAction)
+		require.True(t, tookAction, `warning: this test will only pass the first time- you probably want to run "./env.sh restore" first or run your tests with "./test.sh restore""`)
 
 		tookAction, err = Deploy(deployment)
 		require.NoError(t, err)
