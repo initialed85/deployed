@@ -4,13 +4,12 @@ set -e
 
 function test() {
 	if [[ "${1}" == "" ]]; then
-		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}" | uniq; done | grep -vE 'local|ssh|rollout|deploy')"
-		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}" | uniq; done | grep local)"
-		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}" | uniq; done | grep ssh)"
-		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}" | uniq; done | grep deploy)"
-		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}" | uniq; done | grep rollout)"
+		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}"; done | uniq | sort | grep -vE 'connection|rollout|deploy')"
+		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}"; done | uniq | sort | grep connection)"
+		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}"; done | uniq | sort | grep deploy)"
+		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}"; done | uniq | sort | grep rollout)"
 	else
-		go test -v -count=1 -failfast "${*}"
+		go test -v -count=1 -failfast "${@}"
 	fi
 }
 export -f test
@@ -48,7 +47,7 @@ elif [[ "${1}" == "restore" ]]; then
 	if [[ "${1}" == "" ]]; then
 		test
 	else
-		test "${*}"
+		test "${@}"
 	fi
 elif [[ "${1}" == "e2e-restore" ]]; then
 	go vet ./...
@@ -67,5 +66,5 @@ elif [[ "${1}" == "" ]]; then
 else
 	go vet ./...
 
-	test "${*}"
+	test "${@}"
 fi

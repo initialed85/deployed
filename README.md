@@ -45,6 +45,7 @@ A simple way to provision software on Linux servers, via SSH.
   - [DONE] Be able to transfer files via SCP and move them to a privileged location with sudo
   - [DONE] Be able to transfer folders via SCP
   - [DONE] Be able to transfer folders via SCP and move them to a privileged location with sudo
+  - [TODO] Have support for SSH compression ([it's complicated and has been since 20191](https://github.com/golang/go/issues/31369))
   - [TODO] Expose SSH layer via an app entrypoint (as a low-level escape hatch)
 - [WIP] Build deployment layer
   - [DONE] Be able to run a number of Steps against a Target
@@ -77,6 +78,7 @@ A simple way to provision software on Linux servers, via SSH.
 - [TODO] Support for SSH keys as well as passwords (how will this work with sudo?)
 - [TODO] Don't just stub out SSH host key validation
 - [TODO] Fix the hacked in ${USER} env handling
+- [TODO] Have a common abstraction for the Local and SSH connections
 
 ### Bugs
 

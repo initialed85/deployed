@@ -1,5 +1,15 @@
 # AGENTS.md
 
+The goal of this project is for Ed (initialed85) to get back to enjoying tradcoding (writing code by hand).
+
+So why do we need this tool? Well, Ed's take:
+
+- Packer is good, but it's slow to iterate with- best left for the things we don't change often
+- Terraform is good for instatiating Packer-baked VMs and not much else; cloud-init is a tedious way to manage what's installed
+- That leaves us with Ansible... I just really don't like Ansible
+
+So we're making our own.
+
 ## Scope
 
 Tooling only: `env.sh`, `test.sh`, `Vagrantfile`, `docker-compose.yaml`, Dockerfiles, `.gitignore`. Do not edit Go source, tests, or application code — the user owns that.

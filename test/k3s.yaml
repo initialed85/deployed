@@ -11,8 +11,8 @@ specs:
         downloads:
           # by naming a download, we can refer to it in any step of any spec, as long as it's already happened
           - name: k3s-master-kubeconfig
-            remote: /home/user2/.kube
-            local: /tmp/home-user2-dot-kube
+            remote: /home/user2/.kube/config
+            local: /tmp/home-user2-kubeconfig
 
   - name: k3s-agent
     with_sudo: true
@@ -20,14 +20,20 @@ specs:
       - uploads:
           # prefixing with "?" means "refer to the download of this name"
           - local: "?k3s-master-kubeconfig"
-            remote: /home/user2/.kube
+            remote: /home/user2/.kube/config
         script: "@deploy-k3s-agent.sh"
 
   - name: k3s-kubeconfig
     steps:
       - uploads:
-          - local: /tmp/home-user2-dot-kube/config
+          - local: "?k3s-master-kubeconfig"
             remote: /home/${USER}/.kube/config-other
+        script: |
+          #!/bin/bash
+          
+          set -e
+          
+          cat "/home/${USER}/.kube/config-other" | sed 's/default/deployed-test/g' > /home/${USER}/.kube/config-another
 
 #
 # pools define the targets
@@ -46,7 +52,7 @@ pools:
 
   - name: local
     targets:
-      - ${USER}:${PASS}@localhost:0
+      - ${USER}:${PASS}@__local__:0
 
 #
 # mappings relate specs to pools (note: top-level sequence affects deployment order)

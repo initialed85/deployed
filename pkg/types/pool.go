@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-func ParseTarget(target string) (string, string, string, int64, error) {
+func ParseTarget(target string) (string, string, string, int, error) {
 	var username, password, host string
-	var port int64
+	var port int
 
 	err := func() error {
 		parts := strings.Split(target, "@")
@@ -33,11 +33,12 @@ func ParseTarget(target string) (string, string, string, int64, error) {
 		host = hostAndPortParts[0]
 		rawPort := hostAndPortParts[1]
 
-		var err error
-		port, err = strconv.ParseInt(rawPort, 10, 32)
+		port32as64, err := strconv.ParseInt(rawPort, 10, 32)
 		if err != nil {
 			return fmt.Errorf("port could not be parsed as int32 because %s", err)
 		}
+
+		port = int(port32as64)
 
 		return nil
 	}()
@@ -45,7 +46,7 @@ func ParseTarget(target string) (string, string, string, int64, error) {
 		return "", "", "", 0, fmt.Errorf("failed to split %#+v into (username:password)@(host:port) because %s", target, err)
 	}
 
-	return username, password, host, port, nil
+	return username, password, host, int(port), nil
 }
 
 type Pool struct {

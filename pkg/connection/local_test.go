@@ -1,4 +1,4 @@
-package local
+package connection
 
 import (
 	"fmt"
@@ -40,7 +40,13 @@ func TestLocal(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("LongLivedConnection", func(t *testing.T) {
-		c, err := Connect("localhost", 0, "${USER}", "${PASS}")
+		_, err := OpenLocal("some.host.org", 22, "${USER}", "${PASS}")
+		require.Error(t, err)
+
+		_, err = OpenLocal("__local__", 22, "${USER}", "${PASS}")
+		require.Error(t, err)
+
+		c, err := OpenLocal("__local__", 0, "${USER}", "${PASS}")
 		require.NoError(t, err)
 
 		defer c.Close()
@@ -75,7 +81,7 @@ func TestLocal(t *testing.T) {
 		err = c.UploadWithSudo("/tmp/other-file.bin", "/var/log/weird-file.txt")
 		require.NoError(t, err)
 
-		err = c.Upload("/tmp/some-folder", fmt.Sprintf("/home/%s/some-folder", c.Username))
+		err = c.Upload("/tmp/some-folder", fmt.Sprintf("/home/%s/some-folder", c.GetUsername()))
 		require.NoError(t, err)
 
 		err = c.UploadWithSudo("/tmp/some-folder", "/var/log/weird-folder")
@@ -89,13 +95,15 @@ func TestLocal(t *testing.T) {
 		stdout, stderr, err = c.RunCommand("cd /srv/")
 		require.NoError(t, err)
 
-		wd, err := os.Getwd()
-		require.NoError(t, err)
-
 		stdout, stderr, err = c.RunCommand("pwd")
 		require.NoError(t, err)
 		require.NotEmpty(t, stdout)
-		require.Equal(t, stdout, fmt.Sprintf("%s\n", wd))
+		require.Equal(t, fmt.Sprintf("/home/%s\n", os.Getenv("USER")), stdout)
+
+		stdout, stderr, err = c.RunCommand("echo ${PWD}")
+		require.NoError(t, err)
+		require.NotEmpty(t, stdout)
+		require.Equal(t, fmt.Sprintf("/home/%s\n", os.Getenv("USER")), stdout)
 
 		err = c.Download("/var/log/weird-file.txt", "/tmp/weird-file.txt")
 		require.NoError(t, err)

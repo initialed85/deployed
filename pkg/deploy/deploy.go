@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/initialed85/deployed/pkg/local"
-	"github.com/initialed85/deployed/pkg/ssh"
+	"github.com/initialed85/deployed/pkg/connection"
+	"github.com/initialed85/deployed/pkg/connection/connection_types"
 	"github.com/initialed85/deployed/pkg/types"
 )
 
@@ -45,18 +45,17 @@ func Deploy(deployment types.Deployment) (bool, error) {
 		return false, err
 	}
 
-	var c Deployable
+	open := func() connection_types.OpenDeployableFn {
+		if port <= 0 {
+			return connection.OpenLocal
+		} else {
+			return connection.OpenSSH
+		}
+	}()
 
-	if port > 0 {
-		c, err = ssh.Connect(host, int(port), username, password)
-		if err != nil {
-			return false, err
-		}
-	} else {
-		c, err = local.Connect(host, int(port), username, password)
-		if err != nil {
-			return false, err
-		}
+	c, err := open(host, port, username, password)
+	if err != nil {
+		return false, err
 	}
 
 	defer c.Close()
