@@ -4,7 +4,6 @@ import (
 	"fmt"
 	_log "log"
 	"os"
-	"strings"
 
 	"github.com/initialed85/deployed/pkg/connection"
 	"github.com/initialed85/deployed/pkg/connection/connection_types"
@@ -21,24 +20,6 @@ func Deploy(deployment types.Deployment) (bool, error) {
 	)
 
 	log.Printf("starting deploy")
-
-	localHash, err := deployment.Hash()
-	if err != nil {
-		return false, err
-	}
-
-	log.Printf("local hash: %s", localHash)
-
-	localHashPath := fmt.Sprintf("/tmp/%s.local-%s", deployment.HashFile(), deployment.ID)
-
-	err = os.WriteFile(localHashPath, []byte(localHash), 0o777)
-	if err != nil {
-		return false, err
-	}
-
-	defer func() {
-		_ = os.Remove(localHashPath)
-	}()
 
 	username, password, host, port, err := types.ParseTarget(deployment.Target)
 	if err != nil {
@@ -60,16 +41,13 @@ func Deploy(deployment types.Deployment) (bool, error) {
 
 	defer c.Close()
 
-	remoteHashPath := deployment.HashFile()
+	hashesMatch, err := deployment.LocalAndRemoteHashesMatch(c)
+	if err != nil {
+		return false, err
+	}
 
-	out, _, _ := c.RunCommand(fmt.Sprintf("test -f '%s' && cat '%s'", remoteHashPath, remoteHashPath))
-
-	remoteHash := strings.TrimSpace(out)
-
-	remoteAttemptedHashPath := fmt.Sprintf("%s.attempted-%s", deployment.HashFile(), deployment.ID)
-
-	if remoteHash != localHash {
-		err = c.Upload(localHashPath, remoteAttemptedHashPath)
+	if !hashesMatch {
+		err = deployment.WriteAttemptedHashToRemote(c)
 		if err != nil {
 			return false, err
 		}
@@ -78,7 +56,7 @@ func Deploy(deployment types.Deployment) (bool, error) {
 	tookAction := false
 
 	for i, step := range deployment.Spec.Steps {
-		if remoteHash != localHash {
+		if !hashesMatch {
 			//
 			// upload files / folders
 			//
@@ -226,12 +204,12 @@ func Deploy(deployment types.Deployment) (bool, error) {
 		}
 	}
 
-	if remoteHash == localHash {
+	if hashesMatch {
 		log.Printf("deploy no-op (local hash and remote hash match)")
 		return false, nil
 	}
 
-	_, _, err = c.RunCommand(fmt.Sprintf("mv -fv %s %s", remoteAttemptedHashPath, remoteHashPath))
+	deployment.CommitRemoteHash(c)
 	if err != nil {
 		return tookAction, fmt.Errorf("failed to mark attempted steps as confirmed because %s", err)
 	}

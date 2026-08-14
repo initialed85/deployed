@@ -2,11 +2,12 @@ package env
 
 import (
 	"os"
+	"testing"
 
 	"github.com/initialed85/deployed/pkg/helpers/pointers"
 )
 
-var IsDebug = os.Getenv("DEBUG") == "1"
+var IsDebug = os.Getenv("DEBUG") == "1" || testing.Testing() == true
 
 var ForceWithSudo *bool
 

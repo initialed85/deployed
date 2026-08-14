@@ -33,6 +33,10 @@ specs:
           
           set -e
           
+          env
+          echo ""
+          whoami
+          
           cat "/home/${USER}/.kube/config-other" | sed 's/default/deployed-test/g' > /home/${USER}/.kube/config-another
 
 #

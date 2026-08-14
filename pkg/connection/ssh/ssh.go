@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/initialed85/deployed/pkg/connection/connection_types"
 	"github.com/initialed85/deployed/pkg/connection/local"
+	"github.com/initialed85/deployed/pkg/helpers/env"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -74,7 +75,9 @@ func Open(host string, port int, username string, password string) (connection_t
 	c.SSHConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey() // TODO(initialed85): better security
 	c.SSHConfig.Timeout = time.Second * 10
 
-	c.logger.Printf("connecting to %s...", strings.TrimSpace(c.logger.Prefix()))
+	if env.IsDebug {
+		c.logger.Printf("connecting to %s...", strings.TrimSpace(c.logger.Prefix()))
+	}
 
 	var err error
 
@@ -94,7 +97,9 @@ func Open(host string, port int, username string, password string) (connection_t
 
 	c.SCPClient = &scpClient
 
-	c.logger.Printf("connected.")
+	if env.IsDebug {
+		c.logger.Printf("connected.")
+	}
 
 	sshSession, err := c.SSHClient.NewSession()
 	if err != nil {
@@ -199,7 +204,9 @@ func (c *Connection) UploadFile(runCommandFn connection_types.RunCommandFn, need
 		remotePathForTransfer = remotePath
 	}
 
-	c.logger.Printf("uploading %s to %s via SCP", localPath, remotePathForTransfer)
+	if env.IsDebug {
+		c.logger.Printf("uploading %s to %s via SCP", localPath, remotePathForTransfer)
+	}
 
 	if !needSudo {
 		remoteFolderPath, _ := filepath.Split(remotePath)
@@ -294,7 +301,9 @@ func (c *Connection) DownloadFile(runCommandFn connection_types.RunCommandFn, ne
 		_ = f.Close()
 	}()
 
-	c.logger.Printf("downloading %s to %s via SCP", remotePathForTransfer, localPath)
+	if env.IsDebug {
+		c.logger.Printf("downloading %s to %s via SCP", remotePathForTransfer, localPath)
+	}
 
 	if needSudo {
 		_, _, err := runCommandFn(fmt.Sprintf("cp -fv '%s' '%s'", remotePath, remotePathForTransfer))
@@ -346,6 +355,11 @@ func (c *Connection) DownloadFolder(runCommandFn connection_types.RunCommandFn, 
 	}
 
 	err = c.DownloadFile(runCommandFn, needSudo, tempFile, tempFile)
+	if err != nil {
+		return fmt.Errorf("failed to download folder %s to %s@%s:%d:%s because %s", tempFile, c.Username, c.Host, c.Port, tempFile, err)
+	}
+
+	_, _, err = c.localConnection.RunCommand(fmt.Sprintf("mkdir -p '%s'", localPath))
 	if err != nil {
 		return fmt.Errorf("failed to download folder %s to %s@%s:%d:%s because %s", tempFile, c.Username, c.Host, c.Port, tempFile, err)
 	}

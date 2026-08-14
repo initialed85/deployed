@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/initialed85/deployed/pkg/deploy"
 	"github.com/initialed85/deployed/pkg/helpers/env"
-	"github.com/initialed85/deployed/pkg/helpers/pointers"
 	"github.com/initialed85/deployed/pkg/types"
 	yaml "go.yaml.in/yaml/v4"
 )
@@ -73,7 +72,7 @@ func Rollout(workspaceYAMLPath string) error {
 
 				deployment := types.Deployment{
 					ID:            uuid.Must(uuid.NewRandom()),
-					ForceWithSudo: pointers.Ptr(true),
+					ForceWithSudo: env.ForceWithSudo,
 					Spec:          mapping.Spec,
 					Target:        target,
 				}

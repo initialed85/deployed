@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/initialed85/deployed/pkg/connection/connection_types"
+	"github.com/initialed85/deployed/pkg/helpers/env"
 )
 
 type Connection struct {
@@ -68,11 +69,13 @@ func open(host string, port int, username string, password string, openConnectab
 		}
 	}
 
-	c.logger.Printf("is root: %v", c.IsRoot)
-	if !c.IsRoot {
-		c.logger.Printf("can sudo: %v", c.CanSudo)
-		if c.CanSudo {
-			c.logger.Printf("sudo needs password: %v", c.SudoNeedsPassword)
+	if env.IsDebug {
+		c.logger.Printf("is root: %v", c.IsRoot)
+		if !c.IsRoot {
+			c.logger.Printf("can sudo: %v", c.CanSudo)
+			if c.CanSudo {
+				c.logger.Printf("sudo needs password: %v", c.SudoNeedsPassword)
+			}
 		}
 	}
 
@@ -115,7 +118,9 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 			}
 
 			line := r.Text()
-			c.logger.Printf("LO <<< %s", line)
+			if env.IsDebug {
+				c.logger.Printf("LO <<< %s", line)
+			}
 			stdout.WriteString(line)
 			stdout.WriteRune('\n')
 		}
@@ -141,7 +146,9 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 			}
 
 			line := r.Text()
-			c.logger.Printf("LE <<< %s", line)
+			if env.IsDebug {
+				c.logger.Printf("LE <<< %s", line)
+			}
 			stderr.WriteString(line)
 			stderr.WriteRune('\n')
 		}
@@ -155,7 +162,9 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 		stderr.Write(b)
 	}()
 
-	c.logger.Printf("LI >>> %s", command)
+	if env.IsDebug {
+		c.logger.Printf("LI >>> %s", command)
+	}
 	err = runFn()
 
 	cancelFn()
@@ -200,7 +209,9 @@ func (c *Connection) Upload(localPath string, remotePath string) error {
 		return fmt.Errorf("upload of %#+v to %#+v failed because %s", localPath, remotePath, err)
 	}
 
-	c.logger.Printf("uploading %#+v to %#+v", localPath, remotePath)
+	if env.IsDebug {
+		c.logger.Printf("uploading %#+v to %#+v", localPath, remotePath)
+	}
 
 	if !stat.IsDir() {
 		err = c.c.UploadFile(c.RunCommand, false, localPath, remotePath)
@@ -221,7 +232,9 @@ func (c *Connection) UploadWithSudo(localPath string, remotePath string) error {
 		return fmt.Errorf("upload of %#+v to %#+v with sudo failed because %s", localPath, remotePath, err)
 	}
 
-	c.logger.Printf("uploading %#+v to %#+v with sudo", localPath, remotePath)
+	if env.IsDebug {
+		c.logger.Printf("uploading %#+v to %#+v with sudo", localPath, remotePath)
+	}
 
 	if !stat.IsDir() {
 		err = c.c.UploadFile(c.RunCommandWithSudo, true, localPath, remotePath)
@@ -240,7 +253,9 @@ func (c *Connection) Download(remotePath string, localPath string) error {
 	_, _, err := c.RunCommand(fmt.Sprintf("test -d '%s'", remotePath))
 	isDir := err == nil
 
-	c.logger.Printf("downloading %#+v to %#+v", remotePath, localPath)
+	if env.IsDebug {
+		c.logger.Printf("downloading %#+v to %#+v", remotePath, localPath)
+	}
 
 	if !isDir {
 		err = c.c.DownloadFile(c.RunCommand, false, remotePath, localPath)
@@ -259,7 +274,9 @@ func (c *Connection) DownloadWithSudo(remotePath string, localPath string) error
 	_, _, err := c.RunCommandWithSudo(fmt.Sprintf("test -d '%s'", remotePath))
 	isDir := err == nil
 
-	c.logger.Printf("downloading %#+v to %#+v with sudo", remotePath, localPath)
+	if env.IsDebug {
+		c.logger.Printf("downloading %#+v to %#+v with sudo", remotePath, localPath)
+	}
 
 	if !isDir {
 		err = c.c.DownloadFile(c.RunCommandWithSudo, true, remotePath, localPath)
