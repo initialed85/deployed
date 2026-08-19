@@ -13,30 +13,38 @@ import (
 	"github.com/initialed85/deployed/pkg/helpers/env"
 )
 
+func defaultLogRenderer(c *Connection, prefix string, line string) {
+	if env.IsDebug {
+		c.logger.Printf("%s: %s", prefix, line)
+	}
+}
+
 type Connection struct {
 	logger            *log.Logger
 	c                 connection_types.Connectable
+	logRenderer       func(*Connection, string, string)
+	uname             string
+	canSudo           bool
+	sudoNeedsPassword bool
+	isRoot            bool
 	Host              string
 	Port              int
 	Username          string
 	Password          string
-	Uname             string
-	CanSudo           bool
-	SudoNeedsPassword bool
-	IsRoot            bool
 }
 
-func open(host string, port int, username string, password string, openConnectableFn connection_types.OpenConnectableFn, connectableType string) (connection_types.Deployable, error) {
+func open(host string, port int, username string, password string, openConnectableFn connection_types.OpenConnectableFn, connectableType string, logRenderer func(*Connection, string, string)) (connection_types.Deployable, error) {
 	c := &Connection{
 		logger: log.New(
 			os.Stdout,
 			fmt.Sprintf("Conn[%s]{%s@%s:%d} ", connectableType, username, host, port),
 			log.Ldate|log.Ltime|log.Lmicroseconds|log.LUTC|log.Lmsgprefix,
 		),
-		Host:     host,
-		Port:     port,
-		Username: username,
-		Password: password,
+		logRenderer: logRenderer,
+		Host:        host,
+		Port:        port,
+		Username:    username,
+		Password:    password,
 	}
 
 	var err error
@@ -48,33 +56,33 @@ func open(host string, port int, username string, password string, openConnectab
 
 	c.logger.SetPrefix(fmt.Sprintf("Conn[%s]{%s@%s:%d} ", connectableType, c.c.GetUsername(), host, port))
 
-	c.Uname, _, err = c.RunCommand("uname -a")
+	c.uname, _, err = c.RunCommand("uname -a")
 	if err != nil {
 		c.Close()
 		return nil, err
 	}
-	c.Uname = strings.TrimSpace(c.Uname)
+	c.uname = strings.TrimSpace(c.uname)
 
-	c.IsRoot = c.Username == "root"
+	c.isRoot = c.Username == "root"
 
-	if !c.IsRoot {
+	if !c.isRoot {
 		_, _, err := c.RunCommand("sudo -s -S -n true")
 		if err != nil {
 			_, _, err = c.RunCommand(fmt.Sprintf("echo '%s' | sudo -s -S true", c.Password))
-			c.CanSudo = err == nil
-			c.SudoNeedsPassword = c.CanSudo
+			c.canSudo = err == nil
+			c.sudoNeedsPassword = c.canSudo
 		} else {
-			c.CanSudo = true
-			c.SudoNeedsPassword = false
+			c.canSudo = true
+			c.sudoNeedsPassword = false
 		}
 	}
 
 	if env.IsDebug {
-		c.logger.Printf("is root: %v", c.IsRoot)
-		if !c.IsRoot {
-			c.logger.Printf("can sudo: %v", c.CanSudo)
-			if c.CanSudo {
-				c.logger.Printf("sudo needs password: %v", c.SudoNeedsPassword)
+		c.logger.Printf("is root: %v", c.isRoot)
+		if !c.isRoot {
+			c.logger.Printf("can sudo: %v", c.canSudo)
+			if c.canSudo {
+				c.logger.Printf("sudo needs password: %v", c.sudoNeedsPassword)
 			}
 		}
 	}
@@ -95,6 +103,8 @@ func (c *Connection) Close() {
 }
 
 func (c *Connection) RunCommand(command string) (string, string, error) {
+	command = strings.TrimSpace(command)
+
 	stdoutPipe, stderrPipe, stdinPipe, runFn, cancelFn, err := c.c.PrepareCommand(command)
 	if err != nil {
 		return "", "", err
@@ -118,9 +128,9 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 			}
 
 			line := r.Text()
-			if env.IsDebug {
-				c.logger.Printf("LO <<< %s", line)
-			}
+
+			c.logRenderer(c, "LO <<< ", line)
+
 			stdout.WriteString(line)
 			stdout.WriteRune('\n')
 		}
@@ -146,9 +156,9 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 			}
 
 			line := r.Text()
-			if env.IsDebug {
-				c.logger.Printf("LE <<< %s", line)
-			}
+
+			c.logRenderer(c, "LE <<< ", line)
+
 			stderr.WriteString(line)
 			stderr.WriteRune('\n')
 		}
@@ -162,9 +172,10 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 		stderr.Write(b)
 	}()
 
-	if env.IsDebug {
-		c.logger.Printf("LI >>> %s", command)
+	for line := range strings.SplitSeq(command, "\n") {
+		c.logRenderer(c, "LI >>> ", line)
 	}
+
 	err = runFn()
 
 	cancelFn()
@@ -188,15 +199,15 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 }
 
 func (c *Connection) RunCommandWithSudo(command string) (string, string, error) {
-	if c.IsRoot {
+	if c.isRoot {
 		return c.RunCommand(command)
 	}
 
-	if !c.CanSudo {
+	if !c.canSudo {
 		return "", "", fmt.Errorf("this session cannot sudo")
 	}
 
-	if c.SudoNeedsPassword {
+	if c.sudoNeedsPassword {
 		return c.RunCommand(fmt.Sprintf("echo '%s' | sudo -s -S %s", c.Password, command))
 	}
 

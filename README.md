@@ -52,6 +52,7 @@ A simple way to provision software on Linux servers, via SSH.
   - [DONE] Store a hash of the last run Steps on a Target for idempotency
   - [DONE] Be able to specify one or more Upload files or folders for a Target
   - [DONE] Be able to specify one or more Download files or folders for a Target
+  - [TODO] Test some more cases (full, scripts only, uploads only, downloads only)
   - [TODO] Expose deployment layer via an app entrypoint
 - [WIP] Build workspace layer
   - [DONE] Be able to define Specs (collection of Steps)

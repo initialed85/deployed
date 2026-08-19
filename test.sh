@@ -2,7 +2,7 @@
 
 set -e
 
-function test() {
+function do_test() {
 	if [[ "${1}" == "" ]]; then
 		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}"; done | uniq | sort | grep -vE 'connection|rollout|deploy')"
 		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}"; done | uniq | sort | grep connection)"
@@ -12,31 +12,35 @@ function test() {
 		go test -v -count=1 -failfast "${@}"
 	fi
 }
-export -f test
+export -f do_test
 
-function test_e2e() {
+function do_test_e2e() {
 	go build -o ./deployed .
 
 	./deployed rollout test/k3s.yaml
 }
-export -f test_e2e
+export -f do_test_e2e
 
 if [[ "${1}" == "watch-restore" ]]; then
 	shift
 
 	if [[ "${1}" == "" ]]; then
-		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && ./env.sh restore && test"
+		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && ./env.sh restore && do_test"
 	else
-		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && ./env.sh restore && test ${*}"
+		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && ./env.sh restore && do_test ${*}"
 	fi
 elif [[ "${1}" == "watch" ]]; then
 	shift
 
 	if [[ "${1}" == "" ]]; then
-		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && test"
+		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && do_test"
 	else
-		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && test ${*}"
+		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && do_test ${*}"
 	fi
+elif [[ "${1}" == "e2e-watch" ]]; then
+	shift
+
+	find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && do_test_e2e"
 elif [[ "${1}" == "restore" ]]; then
 	shift
 
@@ -45,26 +49,26 @@ elif [[ "${1}" == "restore" ]]; then
 	./env.sh restore
 
 	if [[ "${1}" == "" ]]; then
-		test
+		do_test
 	else
-		test "${@}"
+		do_test "${@}"
 	fi
 elif [[ "${1}" == "e2e-restore" ]]; then
 	go vet ./...
 
 	./env.sh restore
 
-	test_e2e
+	do_test_e2e
 elif [[ "${1}" == "e2e" ]]; then
 	go vet ./...
 
-	test_e2e
+	do_test_e2e
 elif [[ "${1}" == "" ]]; then
 	go vet ./...
 
-	test
+	do_test
 else
 	go vet ./...
 
-	test "${@}"
+	do_test "${@}"
 fi

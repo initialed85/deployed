@@ -17,7 +17,7 @@ func ParseTarget(target string) (string, string, string, int, error) {
 			return fmt.Errorf("target doesn't have '@' symbol")
 		}
 
-		usernameAndPassword := parts[0]
+		usernameAndPassword := strings.Join(parts[0:len(parts)-1], "@")
 		usernameAndPasswordParts := strings.Split(usernameAndPassword, ":")
 		if len(usernameAndPasswordParts) < 2 {
 			return fmt.Errorf("username-and-password (left) half doesn't have ':' symbol")
@@ -25,7 +25,7 @@ func ParseTarget(target string) (string, string, string, int, error) {
 		username = usernameAndPasswordParts[0]
 		password = usernameAndPasswordParts[1]
 
-		hostAndPort := parts[1]
+		hostAndPort := parts[len(parts)-1]
 		hostAndPortParts := strings.Split(hostAndPort, ":")
 		if len(hostAndPortParts) < 2 {
 			return fmt.Errorf("host-and-port (right) half doesn't have ':' symbol")

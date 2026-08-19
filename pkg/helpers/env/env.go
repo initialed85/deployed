@@ -1,6 +1,7 @@
 package env
 
 import (
+	"log"
 	"os"
 	"testing"
 
@@ -17,4 +18,6 @@ func init() {
 	} else if os.Getenv("FORCE_WITH_SUDO") == "0" {
 		ForceWithSudo = pointers.Ptr(false)
 	}
+
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC | log.Lmsgprefix)
 }

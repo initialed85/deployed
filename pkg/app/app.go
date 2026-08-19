@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -10,16 +11,16 @@ import (
 	"github.com/initialed85/deployed/pkg/types"
 )
 
-func App() error {
+func App(versions ...string) error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: [ssh | ssh-with-sudo | deploy | rollout]")
+		return fmt.Errorf("usage: [ssh | ssh-with-sudo | deploy | rollout | version]")
 	}
 
 	switch os.Args[1] {
 
 	case "ssh", "ssh-with-sudo":
 		if len(os.Args) < 4 {
-			return fmt.Errorf("usage: %s [target] [command ...]", os.Args[1])
+			return fmt.Errorf("usage: %s %s [target] [command ...]", os.Args[0], os.Args[1])
 		}
 
 		username, password, host, port, err := types.ParseTarget(os.Args[2])
@@ -57,7 +58,7 @@ func App() error {
 
 	case "rollout":
 		if len(os.Args) < 3 {
-			return fmt.Errorf("for %#+v, second argument must be path to workspace YAML", os.Args[1])
+			return fmt.Errorf("for %s %s, second argument must be path to workspace YAML", os.Args[0], os.Args[1])
 		}
 
 		err := rollout.Rollout(os.Args[2])
@@ -65,8 +66,15 @@ func App() error {
 			return err
 		}
 
+	case "version":
+		if len(versions) == 0 {
+			return fmt.Errorf("app.App called without versions variadic")
+		}
+
+		log.Printf("%s: %s", os.Args[0], versions[0])
+
 	default:
-		return fmt.Errorf("unrecognized command %#+v", os.Args[1])
+		return fmt.Errorf("unrecognized usage %s %s", os.Args[0], os.Args[1])
 	}
 
 	return nil

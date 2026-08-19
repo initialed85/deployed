@@ -6,5 +6,5 @@ import (
 )
 
 func OpenLocal(host string, port int, username string, password string) (connection_types.Deployable, error) {
-	return open(host, port, username, password, local.Open, "Local")
+	return open(host, port, username, password, local.Open, "Local", defaultLogRenderer)
 }

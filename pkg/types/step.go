@@ -5,9 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/google/uuid"
+	"github.com/initialed85/deployed/pkg/connection/connection_types"
 )
 
 type Step struct {
+	ID        uuid.UUID  `yaml:"-" json:"-"`
 	WithSudo  *bool      `yaml:"with_sudo,omitempty"` // nil implies inherit
 	Uploads   []Upload   `yaml:"uploads"`
 	Script    string     `yaml:"script"`
@@ -56,4 +60,37 @@ func (s *Step) Validate(rootPaths ...string) error {
 	}
 
 	return nil
+}
+
+func (s *Step) GetID() uuid.UUID {
+	return s.ID
+}
+
+func (s *Step) Hash() (string, error) {
+	return Hash(s)
+}
+
+func (s *Step) HashFile(specs ...*Spec) string {
+	var spec *Spec
+	if len(specs) > 0 {
+		spec = specs[0]
+	}
+
+	return HashFile("step", spec)
+}
+
+func (s *Step) WriteHashLocally(spec *Spec) (string, func(), error) {
+	return WriteHashLocally(s, spec)
+}
+
+func (s *Step) LocalAndRemoteHashesMatch(c connection_types.Deployable, spec *Spec) (bool, error) {
+	return LocalAndRemoteHashesMatch("step", s, c, spec)
+}
+
+func (s *Step) WriteAttemptedHashToRemote(c connection_types.Deployable, spec *Spec) error {
+	return WriteAttemptedHashToRemote(s, c, spec)
+}
+
+func (s *Step) CommitRemoteHash(c connection_types.Deployable, spec *Spec) error {
+	return CommitRemoteHash(s, c, spec)
 }

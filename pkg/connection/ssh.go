@@ -6,7 +6,7 @@ import (
 )
 
 func OpenSSH(host string, port int, username string, password string) (connection_types.Deployable, error) {
-	deployable, err := open(host, port, username, password, ssh.Open, "SSH")
+	deployable, err := open(host, port, username, password, ssh.Open, "SSH", defaultLogRenderer)
 	if err != nil {
 		return nil, err
 	}
