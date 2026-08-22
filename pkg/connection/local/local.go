@@ -71,7 +71,7 @@ func (c *Connection) Close() {
 }
 
 func (c *Connection) PrepareCommand(command string) (io.Reader, io.Reader, io.Writer, connection_types.RunPreparedCommandFn, context.CancelFunc, error) {
-	cmd := exec.Command("bash", "-c", command)
+	cmd := exec.Command("sh", "-c", command)
 
 	cmd.Dir = fmt.Sprintf("/home/%s", c.Username)
 
@@ -140,7 +140,7 @@ func (c *Connection) doCopy(runCommandFn connection_types.RunCommandFn, localPat
 		_ = os.MkdirAll(remotePath, 0o777)
 	}
 
-	_, _, err = runCommandFn(fmt.Sprintf("rsync -avcr '%s' '%s'", localPath, remotePath))
+	_, _, err = runCommandFn(fmt.Sprintf("rsync -avc '%s' '%s'", localPath, remotePath))
 	if err != nil {
 		return err
 	}

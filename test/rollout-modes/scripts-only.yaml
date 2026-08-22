@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../schema/workspace.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/initialed85/deployed/master/schema/workspace.schema.json
 
 specs:
   - name: rollout-modes-scripts-only

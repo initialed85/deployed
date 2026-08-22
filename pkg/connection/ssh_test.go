@@ -122,7 +122,7 @@ func TestSSH(t *testing.T) {
 		require.Error(t, err)
 
 		// TODO(initialed85): fix the test harness requiring sudo
-		_, err = exec.Command("bash", "-c", fmt.Sprintf("sudo -n chown -fR '%s:%s' /tmp/etc", os.Getenv("USER"), os.Getenv("USER"))).Output()
+		_, err = exec.Command("sh", "-c", fmt.Sprintf("sudo -n chown -fR '%s:%s' /tmp/etc", os.Getenv("USER"), os.Getenv("USER"))).Output()
 		require.NoError(t, err)
 
 		err = c.DownloadWithSudo("/etc", "/tmp/etc")

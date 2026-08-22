@@ -37,7 +37,7 @@ function do_build() {
 export -f do_build
 
 if [[ "${1}" == "watch" ]]; then
-	find test.sh build.sh install.sh go.mod main.go pkg test | entr -n -cc -s "do_build"
+	find test.sh build.sh install-local.sh go.mod main.go pkg test | entr -n -cc -s "do_build"
 else
 	do_build
 fi

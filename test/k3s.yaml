@@ -1,28 +1,41 @@
-# yaml-language-server: $schema=../schema/workspace.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/initialed85/deployed/master/schema/workspace.schema.json
+# note: including the schema comment above should enable your IDE to give you some relevant intellisense
 
+# the specs collection is just a loose bucket of specs; they don't do anything until they're mapped to pools
 specs:
+  # a spec is a named collection of steps
   - name: k3s-master
+    # with_sudo can be set at the spec like this
     with_sudo: true
+    # steps within a spec are executed sequentially
     steps:
+      # a step can refer to an external script in the workspace folder with the "@" prefix
       - script: "@deploy-k3s-master.sh"
+        # a step can refer to one or more files or folders to download (after the script runs)
         downloads:
+          # a download can be given a name, to be referred to later
           - name: k3s-master-kubeconfig
             remote: /home/user2/.kube/config
             local: /tmp/home-user2-kubeconfig
 
   - name: k3s-agent
-    with_sudo: true
     steps:
+      # a step can refer to one or more files or folders to upload (before the script runs)
       - uploads:
           - local: "?k3s-master-kubeconfig"
             remote: /home/user2/.kube/config
         script: "@deploy-k3s-agent.sh"
+        # with_sudo can be set at the step also
+        with_sudo: true
 
   - name: k3s-kubeconfig
     steps:
       - uploads:
+          # an upload can refer to a download from another step in the workspace the "?" prefix
+          # note: download -> upload dependencies are error-checked, but sequence is controlled by the user (you cannot refer to a download will not exist at that point)
           - local: "?k3s-master-kubeconfig"
             remote: /home/${USER}/.kube/config-other
+        # a step can describe an inline script (to be executed using sh) with a single or multiline string (trade syntax highlighting for convenience)
         script: |
           #!/bin/bash
 
@@ -34,9 +47,12 @@ specs:
 
           cat "/home/${USER}/.kube/config-other" | sed 's/default/deployed-test/g' > /home/${USER}/.kube/config-another
 
+# the pools collection is just a loose bucket of pools; they don't do anything until they're mapped to specs
 pools:
+  # a pool is a named collection of targets
   - name: k3s-master-nodes
     targets:
+      # a target is in the form (user):(password)@(host):(port)
       - user2:Password2@192.168.56.11:22
 
   - name: k3s-agent-nodes
@@ -47,14 +63,27 @@ pools:
 
   - name: local
     targets:
+      # a host of "__local__" with a port of "0" is a special sentinel that causes a "connection" the machine invoking "deployed rollout"
+      # ${USER} will be replaced with the username of the user invoking "deployed rollout"
+      # ${PASS} will be empty if unset and may be required (pending system configuration) to run any local steps subject to with_sudo: true
       - ${USER}:${PASS}@__local__:0
 
+# mappings group specs and pools together with logical respect to the defined sequence
 #
-# mappings relate specs to pools (note: top-level sequence affects deployment order)
+# - for each mapping
+#   - for each spec
+#     - for each pool
+#       - (fan-out goroutine) for each target
+#         - for each step
+#           - upload files or folders
+#           - run the script
+#           - download files or folders
+#       - (fan-in waitgroup join)
 #
-
 mappings:
+  # a mapping can have one or more specs by name
   - specs: ["k3s-master"]
+    # a mapping can have one or more pools by name
     pools: ["k3s-master-nodes"]
 
   - specs: ["k3s-agent"]
