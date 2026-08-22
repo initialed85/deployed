@@ -66,9 +66,9 @@ func Rollout(workspaceYAMLPath string) error {
 					})
 				}
 			}
-		}
 
-		wg.Wait()
+			wg.Wait()
+		}
 	}
 
 	wg.Wait()

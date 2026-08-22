@@ -4,13 +4,21 @@ set -e
 
 function _do_install() {
 	echo -e "building...\n"
-	
-	go install -trimpath .
+
+	if command -v deployed >/dev/null 2>&1; then
+		rm -f "$(command -v deployed)"
+	fi
+
+	CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" .
+
+	if [[ "${COMPRESS}" == "1" ]]; then
+		upx --best --lzma "$(command -v deployed)"
+	fi
 
 	find "$(realpath "$(command -v deployed)")"
 	ls -al "$(realpath "$(command -v deployed)")"
 	du -sh "$(realpath "$(command -v deployed)")"
-	
+
 	echo -e "\ndone."
 }
 export -f _do_install
@@ -26,5 +34,3 @@ if [[ "${1}" == "watch" ]]; then
 else
 	do_install
 fi
-
-go install -x -trimpath .

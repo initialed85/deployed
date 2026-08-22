@@ -5,9 +5,22 @@ set -e
 function _do_build() {
 	echo -e "building...\n"
 
+	jq <./schema/workspace.schema.json >./schema/workspace.schema.json.tmp
+	mv -f ./schema/workspace.schema.json.tmp ./schema/workspace.schema.json
+
+	go fmt .
+
 	go generate .
 
-	go build -o ./deployed -trimpath .
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ./deployed -trimpath .
+
+	if [[ "${COMPRESS}" == "1" ]]; then
+		if [[ "${GOOS}" == "darwin" ]]; then
+			upx --best --lzma --force-macos ./deployed
+		else
+			upx --best --lzma ./deployed
+		fi
+	fi
 
 	find "$(realpath ./deployed)"
 	ls -al "$(realpath ./deployed)"
