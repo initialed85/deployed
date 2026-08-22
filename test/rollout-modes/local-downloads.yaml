@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../schema/workspace.schema.json
+
+specs:
+  - name: rollout-modes-local-downloads
+    steps:
+      - uploads: []
+        script: ''
+        downloads:
+          - name: local-download-file
+            remote: local-download-file-source
+            local: local-download-file-destination
+          - name: local-download-folder
+            remote: local-download-folder-source
+            local: local-download-folder-destination
+
+pools:
+  - name: local
+    targets:
+      - ${USER}:${PASS}@__local__:0
+
+mappings:
+  - specs:
+      - "@rollout-modes-local-downloads"
+    pools:
+      - "@local"

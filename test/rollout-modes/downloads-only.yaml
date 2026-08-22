@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../schema/workspace.schema.json
+
+specs:
+  - name: rollout-modes-downloads-only
+    with_sudo: true
+    steps:
+      - uploads: []
+        script: ''
+        downloads:
+          - name: downloads-only-download
+            remote: /home/user2/deployed-rollout-modes/downloads-only/download.txt
+            local: download.txt
+
+pools:
+  - name: nodes
+    targets:
+      - user2:Password2@localhost:2221
+
+mappings:
+  - specs:
+      - "@rollout-modes-downloads-only"
+    pools:
+      - "@nodes"

@@ -9,17 +9,19 @@ A simple way to provision software on Linux servers, via SSH.
 ### Configuration
 
 - Step
-  - Some files or folders to transfer
+  - Some files or folders to upload
   - A script to run
+  - Some files or folders to download
 - Spec
   - A collection of Steps
 - Target
-  - A machine to provision (via SSH)
+  - A machine to provision (via SSH or local shell)
 - Pool
   - A collection of Targets
 - Workspace
+  - A collection of Specs
   - A collection of Pools
-  - The mapping of Pools to a Spec
+  - The mapping of Specs to Pools
 
 ## Runtime
 
@@ -46,7 +48,10 @@ A simple way to provision software on Linux servers, via SSH.
   - [DONE] Be able to transfer folders via SCP
   - [DONE] Be able to transfer folders via SCP and move them to a privileged location with sudo
   - [TODO] Have support for SSH compression ([it's complicated and has been since 20191](https://github.com/golang/go/issues/31369))
-  - [TODO] Expose SSH layer via an app entrypoint (as a low-level escape hatch)
+  - [WIP] Expose SSH layer via an app entrypoint (as a low-level escape hatch)
+    - [DONE] Run command (including with sudo)
+    - [TODO] Upload a file / folder
+    - [TODO] Download a file / folder
 - [WIP] Build deployment layer
   - [DONE] Be able to run a number of Steps against a Target
   - [DONE] Store a hash of the last run Steps on a Target for idempotency
@@ -61,7 +66,9 @@ A simple way to provision software on Linux servers, via SSH.
   - [DONE] Have it all driven by YAML files
   - [DONE] Support naming Downloads
   - [DONE] Expose workspace layer via an app entrypoint
-  - [TODO] Split screen log monitor (lazy tmux?)
+  - [WIP] Expose SSH layer at the scope of specific pool via an app entrypoint
+    - [TODO] Upload a file / folder
+    - [TODO] Download a file / fold - [TODO] Split screen log monitor (lazy tmux?)
   - [TODO] Cross-session env var support
     - [TODO] Inject some useful implicit ones; e.g. `DEPLOYED_META_HOST`, `DEPLOYED_META_USER`, `DEPLOYED_META_OS`, `DEPLOYED_META_ARCH`
     - [TODO] Support exporting and reusing private dynamic env vars e.g. `DEPLOYED_PRIVATE_*` (protected from duplicate clashes)
@@ -70,6 +77,11 @@ A simple way to provision software on Linux servers, via SSH.
     - [TODO] Support exporting and reusing public dynamic env vars e.g. `DEPLOYED_PUBLIC_*` (protected from duplicate clashes, exported to host env on completion)
       - Available during the entire rollout, once exported
       - Globally scoped
+- [WIP] DevEx / QoL stuff
+  - [DONE] Strict YAML parsing on execution of `deployed rollout`
+  - [DONE] Provide `json-schema` file for the YAML (for our IDEs)
+  - [DONE] Probably change to `pools + specs` per `mapping` item, have then just as name string mappings (doubt anyone will use the inline feature)
+  - [TODO] Some kind of reusable library of Specs (or possibly even Steps?)
 
 ### Debt
 

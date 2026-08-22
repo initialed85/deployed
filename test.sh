@@ -11,6 +11,8 @@ function do_test() {
 	else
 		go test -v -count=1 -failfast "${@}"
 	fi
+
+	echo -e "\ndone."
 }
 export -f do_test
 
@@ -18,6 +20,8 @@ function do_test_e2e() {
 	go build -o ./deployed .
 
 	./deployed rollout test/k3s.yaml
+
+	echo -e "\ndone."
 }
 export -f do_test_e2e
 

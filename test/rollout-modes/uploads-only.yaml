@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../schema/workspace.schema.json
+
+specs:
+  - name: rollout-modes-uploads-only
+    with_sudo: true
+    steps:
+      - uploads:
+          - local: payload.txt
+            remote: /home/user2/deployed-rollout-modes/uploads-only/upload.txt
+        script: ""
+        downloads: []
+
+pools:
+  - name: nodes
+    targets:
+      - user2:Password2@localhost:2221
+
+mappings:
+  - specs:
+      - "@rollout-modes-uploads-only"
+    pools:
+      - "@nodes"

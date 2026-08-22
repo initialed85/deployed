@@ -3,18 +3,23 @@ package types
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/initialed85/deployed/pkg/helpers/env"
 	"go.yaml.in/yaml/v4"
 )
 
 type Mapping struct {
-	Spec  *Spec   `yaml:"spec"`
-	Pools []*Pool `yaml:"pools"`
+	SpecNames []string `yaml:"specs"`
+	PoolNames []string `yaml:"pools"`
+	Specs     []*Spec  `yaml:"-" json:"-"`
+	Pools     []*Pool  `yaml:"-" json:"-"`
 }
 
 type Workspace struct {
-	rootPath string    `yaml:"-"`
+	rootPath string    `yaml:"-" json:"-"`
 	Specs    []*Spec   `yaml:"specs,omitempty"`
 	Pools    []*Pool   `yaml:"pools,omitempty"`
 	Mappings []Mapping `yaml:"mappings"`
@@ -153,20 +158,26 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 	//
 
 	for i, mapping := range w.Mappings {
-		spec, err := ResolveOrPassthru(mapping.Spec, specByName)
-		if err != nil {
-			return fmt.Errorf("mappings.spec.%s", err)
-		}
+		mapping.Specs = make([]*Spec, 0)
 
-		mapping.Spec = spec
-
-		for j, pool := range mapping.Pools {
-			pool, err = ResolveOrPassthru(pool, poolByName)
+		for j, specName := range mapping.SpecNames {
+			spec, err := Resolve(specName, specByName)
 			if err != nil {
-				return fmt.Errorf("mappings.pools[%d].%s", j, err)
+				return fmt.Errorf("mappings[%d].specs[%d]; %s", i, j, err)
 			}
 
-			mapping.Pools[j] = pool
+			mapping.Specs = append(mapping.Specs, spec)
+		}
+
+		mapping.Pools = make([]*Pool, 0)
+
+		for j, poolName := range mapping.PoolNames {
+			pool, err := Resolve(poolName, poolByName)
+			if err != nil {
+				return fmt.Errorf("mappings[%d].pools[%d]; %s", i, j, err)
+			}
+
+			mapping.Pools = append(mapping.Pools, pool)
 		}
 
 		w.Mappings[i] = mapping
@@ -196,4 +207,83 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 	}
 
 	return nil
+}
+
+func LoadWorkspace(workspaceYAMLPath string, requireSpecs bool, requirePools bool, requireTargets bool) (*Workspace, error) {
+	workspaceYAMLPath, err := filepath.Abs(workspaceYAMLPath)
+	if err != nil {
+		return nil, err
+	}
+
+	rawWorkspace, err := os.ReadFile(workspaceYAMLPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var workspace Workspace
+	err = yaml.Load(rawWorkspace, &workspace, yaml.WithKnownFields())
+	if err != nil {
+		return nil, err
+	}
+
+	workspacePath, _ := filepath.Split(workspaceYAMLPath)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	err = os.Chdir(workspacePath)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = os.Chdir(wd)
+	}()
+
+	err = workspace.Validate(workspacePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if env.IsDebug {
+		log.Printf("%s: ...\n\n%s\n", workspaceYAMLPath, workspace.PrettyFormat())
+	}
+
+	if len(workspace.Mappings) == 0 {
+		return nil, fmt.Errorf("no mappings mappings specified")
+	}
+
+	for i, mapping := range workspace.Mappings {
+		if requireSpecs {
+			if len(mapping.Specs) == 0 {
+				return nil, fmt.Errorf("mappings[%d] has no specs specified", i)
+			}
+
+			for j, spec := range mapping.Specs {
+				if requireTargets {
+					if len(spec.Steps) == 0 {
+						return nil, fmt.Errorf("mappings[%d].pools[%d] has no targets specified", i, j)
+					}
+				}
+			}
+		}
+
+		if requirePools {
+			if len(mapping.Pools) == 0 {
+				return nil, fmt.Errorf("mappings[%d] has no pools specified", i)
+			}
+
+			for j, pool := range mapping.Pools {
+				if requireTargets {
+					if len(pool.Targets) == 0 {
+						return nil, fmt.Errorf("mappings[%d].pools[%d] has no targets specified", i, j)
+					}
+				}
+			}
+		}
+	}
+
+	return &workspace, nil
 }

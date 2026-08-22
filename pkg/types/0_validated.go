@@ -15,7 +15,7 @@ func ValidateOne[T Validated](item T, extras ...string) error {
 	if err != nil {
 		b, _ := yaml.Marshal(item)
 
-		return fmt.Errorf("%s\n\n%s", err, string(b))
+		return fmt.Errorf("%s\n\n%s\n", err, string(b))
 	}
 
 	return nil

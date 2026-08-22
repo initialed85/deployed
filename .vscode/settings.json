@@ -1,0 +1,7 @@
+{
+  "yaml.schemas": {
+    "./schema/workspace.schema.json": [
+      "test/**/*.yaml"
+    ]
+  }
+}

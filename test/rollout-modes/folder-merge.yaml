@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../schema/workspace.schema.json
+
+specs:
+  - name: rollout-modes-folder-merge
+    steps:
+      - uploads:
+          - local: folder-merge-payload
+            remote: /home/user2/deployed-rollout-modes/folder-merge
+        downloads:
+          - name: folder-merge-download
+            remote: /home/user2/deployed-rollout-modes/folder-merge
+            local: folder-merge-download
+
+pools:
+  - name: nodes
+    targets:
+      - user2:Password2@localhost:2221
+
+mappings:
+  - specs:
+      - "@rollout-modes-folder-merge"
+    pools:
+      - "@nodes"

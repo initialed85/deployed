@@ -33,24 +33,34 @@ func GroupByName[T Named](items []T) (map[string]T, []T, error) {
 	return itemByName, unnamedItems, nil
 }
 
-func ResolveOrPassthru[T Named](item T, itemByName map[string]T) (T, error) {
-	name := item.GetName()
+func Resolve[T Named](name string, itemByName map[string]T) (T, error) {
+	zeroT := *new(T)
 
 	if len(name) == 0 {
-		return item, fmt.Errorf("%T.name = %#+v could not be resolved because it has an empty name", item, name)
+		return zeroT, fmt.Errorf("%#+v could not be resolved because it is empty", name)
 	}
 
-	if !strings.HasPrefix(name, "@") {
-		return item, nil
+	// TODO(initialed85): remove this support for legacy naming pattern
+	if strings.HasPrefix(name, "@") {
+		name = strings.TrimLeft(name, "@")
 	}
-
-	name = strings.TrimLeft(name, "@")
 
 	names := slices.Collect(maps.Keys(itemByName))
 
 	resolvedItem, ok := itemByName[name]
 	if !ok {
-		return item, fmt.Errorf("%T.name = %#+v could not be resolved because it's not one of %v", item, name, names)
+		return zeroT, fmt.Errorf("%#+v could not be resolved because it's not one of %v", name, names)
+	}
+
+	return resolvedItem, nil
+}
+
+func ResolveOrPassthru[T Named](item T, itemByName map[string]T) (T, error) {
+	name := item.GetName()
+
+	resolvedItem, err := Resolve(name, itemByName)
+	if err != nil {
+		return item, nil
 	}
 
 	return resolvedItem, nil

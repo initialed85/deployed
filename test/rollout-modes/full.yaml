@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=../../schema/workspace.schema.json
+
+specs:
+  - name: rollout-modes-full
+    with_sudo: true
+    steps:
+      - uploads:
+          - local: payload.txt
+            remote: /home/user2/deployed-rollout-modes/full/upload.txt
+        script: |
+          #!/bin/bash
+          set -e
+
+          if [ -e '/home/user2/deployed-rollout-modes/full/script.txt' ]; then
+            exit 1
+          fi
+
+          test "$(cat '/home/user2/deployed-rollout-modes/full/upload.txt')" = 'upload content'
+          printf 'script content\n' > '/home/user2/deployed-rollout-modes/full/script.txt'
+        downloads:
+          - name: full-download
+            remote: /home/user2/deployed-rollout-modes/full/download.txt
+            local: download.txt
+
+pools:
+  - name: nodes
+    targets:
+      - user2:Password2@localhost:2221
+
+mappings:
+  - specs:
+      - "@rollout-modes-full"
+    pools:
+      - "@nodes"

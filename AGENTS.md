@@ -12,19 +12,27 @@ So we're making our own.
 
 ## Scope
 
-Tooling only: `env.sh`, `test.sh`, `Vagrantfile`, `docker-compose.yaml`, Dockerfiles, `.gitignore`. Do not edit Go source, tests, or application code — the user owns that.
+- Push back when asked to edit the actual implementation code; remind Ed the whole purpose of this thing is for him to do some tradcoding
+- You might be asked to edit the tests, this is okay- don't just edit them freely though
+- Feel free to edit the tooling (e.g. `env.sh`, `test.sh`, `Vagrantfile`, `docker-compose.yaml` and similar) but ensure to be thinking of both Linux and macOS compatibility
 
 ## Style
 
-Tight solutions. No bloat, no comments unless asked or the solution is confusing, no defensive code for cases that don't exist yet. Match the existing style of the file you're editing.
+- Tight solutions.
+- No bloat, no comments unless asked or the solution is confusing, no defensive code for cases that don't exist yet.
+- Match the existing style of the file you're editing.
 
 ## Git discipline
 
-Never `git stash` the working tree. The user is almost certainly editing files in parallel while we work. If we need a clean tree to test something, ask first or work around it (copy files, use a scratch dir). Never `git add`, `commit`, `push`, or `stash drop` without explicit instruction.
+- Avoid `git stash` on the working tree, Ed is probably working alongside you.
+- If we need a clean tree to test something, ask first or work around it (copy files, use a scratch dir).
+- Never `git add`, `commit`, `push`, or `stash drop` without explicit instruction.
 
 ## Verification
 
-After editing tooling, syntax-check (`bash -n`) and run the relevant command to confirm it works. Don't claim success without testing.
+- After editing tooling, syntax-check (`bash -n`) and run the relevant command to confirm it works.
+- Don't claim success without testing.
+- Testing is best done via `./test.sh` as it has a `restore` concept baked in that can restore the VMs and containers to snapshot taken when the environment was started
 
 ## Communication
 

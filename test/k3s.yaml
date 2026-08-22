@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=../schema/workspace.schema.json
+
 #
 # specs define the files to move around and scripts to execute
 #
@@ -30,13 +32,13 @@ specs:
             remote: /home/${USER}/.kube/config-other
         script: |
           #!/bin/bash
-          
+
           set -e
-          
+
           env
           echo ""
           whoami
-          
+
           cat "/home/${USER}/.kube/config-other" | sed 's/default/deployed-test/g' > /home/${USER}/.kube/config-another
 
 #
@@ -63,17 +65,11 @@ pools:
 #
 
 mappings:
-  - spec:
-      name: "@k3s-master"
-    pools:
-      - name: "@k3s-master-nodes"
+  - specs: ["k3s-master"]
+    pools: ["k3s-master-nodes"]
 
-  - spec:
-      name: "@k3s-agent"
-    pools:
-      - name: "@k3s-agent-nodes"
+  - specs: ["k3s-agent"]
+    pools: ["k3s-agent-nodes"]
 
-  - spec:
-      name: "@k3s-kubeconfig"
-    pools:
-      - name: "@local"
+  - specs: ["k3s-kubeconfig"]
+    pools: ["local"]

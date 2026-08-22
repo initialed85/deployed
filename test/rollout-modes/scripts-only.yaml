@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../schema/workspace.schema.json
+
+specs:
+  - name: rollout-modes-scripts-only
+    with_sudo: true
+    steps:
+      - uploads: []
+        script: |
+          #!/bin/bash
+          set -e
+
+          if [ -e '/home/user2/deployed-rollout-modes/scripts-only/script.txt' ]; then
+            exit 1
+          fi
+
+          printf 'script content\n' > '/home/user2/deployed-rollout-modes/scripts-only/script.txt'
+        downloads: []
+
+pools:
+  - name: nodes
+    targets:
+      - user2:Password2@localhost:2221
+
+mappings:
+  - specs:
+      - "@rollout-modes-scripts-only"
+    pools:
+      - "@nodes"

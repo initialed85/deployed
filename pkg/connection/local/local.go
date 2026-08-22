@@ -123,7 +123,7 @@ func (c *Connection) doCopy(runCommandFn connection_types.RunCommandFn, localPat
 		return nil
 	}
 
-	_, _, err := runCommandFn(fmt.Sprintf("cp -frv '%s' '%s'", localPath, remotePath))
+	_, _, err := runCommandFn(fmt.Sprintf("rsync -a '%s' '%s'", localPath, remotePath))
 	if err != nil {
 		return err
 	}

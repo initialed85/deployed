@@ -1,0 +1,224 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "deployed workspace",
+  "description": "A deployed workspace maps ordered Specs to Pools of Targets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mappings"
+  ],
+  "properties": {
+    "specs": {
+      "type": "array",
+      "description": "Reusable collections of deployment Steps.",
+      "items": {
+        "$ref": "#/definitions/spec"
+      }
+    },
+    "pools": {
+      "type": "array",
+      "description": "Named collections of deployment Targets.",
+      "items": {
+        "$ref": "#/definitions/pool"
+      }
+    },
+    "mappings": {
+      "type": "array",
+      "description": "Ordered mappings of Specs to Pools.",
+      "items": {
+        "$ref": "#/definitions/mapping"
+      }
+    }
+  },
+  "definitions": {
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "steps"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The name used to refer to this Spec."
+        },
+        "with_sudo": {
+          "type": "boolean",
+          "description": "Default privilege mode inherited by the Spec's Steps."
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Uploads, scripts and downloads belong inside Steps.",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        }
+      }
+    },
+    "spec_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^@.+$",
+          "description": "A reference to a named Spec, for example @k3s-master."
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "with_sudo": {
+          "type": "boolean",
+          "description": "Privilege mode for this Step, overriding the Spec default."
+        },
+        "uploads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/upload"
+          }
+        },
+        "script": {
+          "type": "string",
+          "description": "A shell script, or @path/to/script.sh to load one from the workspace."
+        },
+        "downloads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/download"
+          }
+        }
+      }
+    },
+    "upload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local",
+        "remote"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "with_sudo": {
+          "type": "boolean",
+          "description": "Privilege mode for this upload, overriding the Step and Spec defaults."
+        },
+        "local": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The local file or folder path, or ?name of an earlier named download."
+        },
+        "remote": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The destination path on the Target."
+        }
+      }
+    },
+    "download": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "remote",
+        "local"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "with_sudo": {
+          "type": "boolean",
+          "description": "Privilege mode for this download, overriding the Step and Spec defaults."
+        },
+        "remote": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The source path on the Target."
+        },
+        "local": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The local destination path."
+        }
+      }
+    },
+    "pool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "targets"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The name used to refer to this Pool."
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A target in username:password@host:port form."
+          }
+        }
+      }
+    },
+    "pool_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^@.+$",
+          "description": "A reference to a named Pool, for example @prod."
+        }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "specs",
+        "pools"
+      ],
+      "properties": {
+        "specs": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Names of Specs to apply in mapping order.",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The name of a Spec, optionally prefixed with @."
+          }
+        },
+        "pools": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Names of Pools to apply in mapping order.",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The name of a Pool, optionally prefixed with @."
+          }
+        }
+      }
+    }
+  }
+}

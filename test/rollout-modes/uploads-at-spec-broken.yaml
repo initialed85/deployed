@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../schema/workspace.schema.json
+
+specs:
+  - name: uploads-at-spec
+    with_sudo: true
+    uploads:
+      - local: payload.txt
+        remote: /home/user2/deployed-rollout-modes/broken/upload.txt
+
+pools: []
+
+mappings: []
