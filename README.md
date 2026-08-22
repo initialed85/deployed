@@ -112,6 +112,21 @@ Or if you want a more automated approach:
 ./test.sh watch-restore
 ```
 
+For a local install you'll want something like:
+
+```shell
+./build.sh && ./install-local.sh
+```
+
+But you can also get away with old reliable:
+
+```shell
+CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" .
+
+# or even this, really (but you should train how you fight)
+go install .
+```
+
 ## Tasks
 
 ### Roadmap
