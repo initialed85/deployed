@@ -123,7 +123,24 @@ func (c *Connection) doCopy(runCommandFn connection_types.RunCommandFn, localPat
 		return nil
 	}
 
-	_, _, err := runCommandFn(fmt.Sprintf("rsync -a '%s' '%s'", localPath, remotePath))
+	stat, err := os.Stat(localPath)
+	if err != nil {
+		return err
+	}
+
+	if stat.IsDir() {
+		if !strings.HasSuffix(localPath, "/") {
+			localPath += "/"
+		}
+
+		if !strings.HasSuffix(remotePath, "/") {
+			remotePath += "/"
+		}
+
+		_ = os.MkdirAll(remotePath, 0o777)
+	}
+
+	_, _, err = runCommandFn(fmt.Sprintf("rsync -avcr '%s' '%s'", localPath, remotePath))
 	if err != nil {
 		return err
 	}

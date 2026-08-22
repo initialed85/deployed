@@ -349,7 +349,7 @@ func (c *Connection) DownloadFolder(runCommandFn connection_types.RunCommandFn, 
 
 	tempFile := fmt.Sprintf("/tmp/deployed-download-folder-%s.tar.gz", uuid.Must(uuid.NewRandom()))
 
-	_, _, err := runCommandFn(fmt.Sprintf("tar czvf '%s' -C '%s' .", tempFile, remotePath))
+	_, _, err := runCommandFn(fmt.Sprintf("tar czf '%s' -C '%s' .", tempFile, remotePath))
 	if err != nil {
 		return fmt.Errorf("failed to download folder %s to %s@%s:%d:%s because %s", remotePath, c.Username, c.Host, c.Port, localPath, err)
 	}
@@ -359,12 +359,22 @@ func (c *Connection) DownloadFolder(runCommandFn connection_types.RunCommandFn, 
 		return fmt.Errorf("failed to download folder %s to %s@%s:%d:%s because %s", tempFile, c.Username, c.Host, c.Port, tempFile, err)
 	}
 
-	_, _, err = c.localConnection.RunCommand(fmt.Sprintf("mkdir -p '%s'", localPath))
+	if needSudo {
+		_, _, err = c.localConnection.RunCommandWithSudo(fmt.Sprintf("mkdir -p '%s'", localPath))
+	} else {
+		_, _, err = c.localConnection.RunCommand(fmt.Sprintf("mkdir -p '%s'", localPath))
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to download folder %s to %s@%s:%d:%s because %s", tempFile, c.Username, c.Host, c.Port, tempFile, err)
 	}
 
-	_, _, err = c.localConnection.RunCommand(fmt.Sprintf("tar xzvf '%s' -C '%s'", tempFile, localPath))
+	if needSudo {
+		_, _, err = c.localConnection.RunCommandWithSudo(fmt.Sprintf("tar xzf '%s' -C '%s'", tempFile, localPath))
+	} else {
+		_, _, err = c.localConnection.RunCommand(fmt.Sprintf("tar xzf '%s' -C '%s'", tempFile, localPath))
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to download folder %s to %s@%s:%d:%s because %s", tempFile, c.Username, c.Host, c.Port, tempFile, err)
 	}

@@ -67,8 +67,10 @@ A simple way to provision software on Linux servers, via SSH.
   - [DONE] Support naming Downloads
   - [DONE] Expose workspace layer via an app entrypoint
   - [WIP] Expose SSH layer at the scope of specific pool via an app entrypoint
+    - [DONE] Run command (including with sudo)
     - [TODO] Upload a file / folder
     - [TODO] Download a file / fold - [TODO] Split screen log monitor (lazy tmux?)
+  - [TODO] Be able to name workspaces
   - [TODO] Cross-session env var support
     - [TODO] Inject some useful implicit ones; e.g. `DEPLOYED_META_HOST`, `DEPLOYED_META_USER`, `DEPLOYED_META_OS`, `DEPLOYED_META_ARCH`
     - [TODO] Support exporting and reusing private dynamic env vars e.g. `DEPLOYED_PRIVATE_*` (protected from duplicate clashes)
@@ -77,6 +79,11 @@ A simple way to provision software on Linux servers, via SSH.
     - [TODO] Support exporting and reusing public dynamic env vars e.g. `DEPLOYED_PUBLIC_*` (protected from duplicate clashes, exported to host env on completion)
       - Available during the entire rollout, once exported
       - Globally scoped
+    - [TODO] Other useful env vars
+      - Name of the workspace
+      - Local folder path of the workspace
+      - Maybe something about adjacent targets (something loop-able e.g. in bash?)
+      - Something to inject the `@download-name` references throughout a bash script
 - [WIP] DevEx / QoL stuff
   - [DONE] Strict YAML parsing on execution of `deployed rollout`
   - [DONE] Provide `json-schema` file for the YAML (for our IDEs)

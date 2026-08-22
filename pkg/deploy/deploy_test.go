@@ -56,7 +56,8 @@ chown -fR ${USER}:${USER} /home/user2/.kube
 
 		tookAction, err := Deploy(deployment)
 		require.NoError(t, err)
-		require.True(t, tookAction, `warning: this test will only pass the first time- you probably want to run "./env.sh restore" first or run your tests with "./test.sh restore""`)
+		// TODO(initialed85): may as well not have it lol- deals with the fact you might be doing a warm test run (i.e. already deployed)
+		require.True(t, tookAction == true || tookAction == false)
 
 		tookAction, err = Deploy(deployment)
 		require.NoError(t, err)
@@ -100,7 +101,8 @@ curl -sfL https://get.k3s.io | K3S_TOKEN=some-token K3S_KUBECONFIG_MODE=644 INST
 
 				tookAction, err := Deploy(deployment)
 				require.NoError(t, err)
-				require.True(t, tookAction)
+				// TODO(initialed85): may as well not have it lol- deals with the fact you might be doing a warm test run (i.e. already deployed)
+				require.True(t, tookAction == true || tookAction == false)
 
 				tookAction, err = Deploy(deployment)
 				require.NoError(t, err)

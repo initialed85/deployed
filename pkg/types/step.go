@@ -29,6 +29,10 @@ func (s *Step) Validate(rootPaths ...string) error {
 			continue
 		}
 
+		if len(rootPath) > 0 && !strings.HasPrefix(upload.Local, "/") {
+			upload.Local = filepath.Join(rootPath, upload.Local)
+		}
+
 		_, err := os.Stat(upload.Local)
 		if err != nil {
 			return fmt.Errorf("script.uploads[%d] refers to local file %#+v that does not exist", i, upload.Local)
@@ -38,7 +42,7 @@ func (s *Step) Validate(rootPaths ...string) error {
 	if s.Script != "" && strings.HasPrefix(s.Script, "@") {
 		scriptPath := strings.TrimLeft(s.Script, "@")
 
-		if len(rootPath) > 0 {
+		if len(rootPath) > 0 && !strings.HasPrefix(scriptPath, "/") {
 			scriptPath = filepath.Join(rootPath, scriptPath)
 		}
 
@@ -57,6 +61,12 @@ func (s *Step) Validate(rootPaths ...string) error {
 		}
 
 		s.Script = string(rawScript)
+	}
+
+	for _, download := range s.Downloads {
+		if len(rootPath) > 0 && !strings.HasPrefix(download.Local, "/") {
+			download.Local = filepath.Join(rootPath, download.Local)
+		}
 	}
 
 	return nil
