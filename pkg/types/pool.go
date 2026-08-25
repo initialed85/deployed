@@ -3,6 +3,7 @@ package types
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -72,4 +73,13 @@ func (p *Pool) Validate(_ ...string) error {
 	}
 
 	return nil
+}
+
+func (p *Pool) Clone() *Pool {
+	n := Pool{
+		Name:    p.Name,
+		Targets: slices.Clone(p.Targets),
+	}
+
+	return &n
 }

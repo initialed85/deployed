@@ -15,7 +15,7 @@ func ValidateOne[T Validated](item T, extras ...string) error {
 	if err != nil {
 		b, _ := yaml.Marshal(item)
 
-		return fmt.Errorf("%s\n\n%s\n", err, string(b))
+		return fmt.Errorf("%s\n\n%s", err, string(b)+"\n")
 	}
 
 	return nil
@@ -23,7 +23,7 @@ func ValidateOne[T Validated](item T, extras ...string) error {
 
 func ValidateMany[T Validated](items []T, extras ...string) error {
 	for i, item := range items {
-		err := ValidateOne(item)
+		err := ValidateOne(item, extras...)
 		if err != nil {
 			return fmt.Errorf("%T[%d] %s", item, i, err)
 		}

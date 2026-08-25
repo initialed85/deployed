@@ -2,8 +2,21 @@
 
 set -e
 
+# ignore warning that this function isn't invoked- it is, in a built command string
+# shellcheck disable=SC2329
+function do_test_e2e() {
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ./deployed -trimpath .
+
+	./deployed rollout test/k3s.yaml
+
+	echo -e "\ndone."
+}
+export -f do_test_e2e
+
+# ignore warning that this function isn't invoked- it is, in a built command string
+# shellcheck disable=SC2329
 function do_test() {
-	if [[ "${1}" == "" ]]; then
+	if [[ "${#}" == "0" ]]; then
 		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}"; done | uniq | sort | grep -vE 'connection|rollout|deploy')"
 		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}"; done | uniq | sort | grep connection)"
 		go test -v -count=1 -failfast "$(for x in $(find . -type f -name '*_test.go' | sort); do dirname "${x}"; done | uniq | sort | grep deploy)"
@@ -16,63 +29,87 @@ function do_test() {
 }
 export -f do_test
 
-function do_test_e2e() {
-	go build -o ./deployed .
+do_restore="0"
+do_watch="0"
+do_test_e2e="0"
+do_test="0"
 
-	./deployed rollout test/k3s.yaml
+case "${1:-}" in
 
-	echo -e "\ndone."
-}
-export -f do_test_e2e
-
-if [[ "${1}" == "watch-restore" ]]; then
+restore)
+	do_restore="1"
+	do_test="1"
 	shift
+	;;
 
-	if [[ "${1}" == "" ]]; then
-		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && ./env.sh restore && do_test"
-	else
-		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && ./env.sh restore && do_test ${*}"
-	fi
-elif [[ "${1}" == "watch" ]]; then
+watch)
+	do_watch="1"
+	do_test="1"
 	shift
+	;;
 
-	if [[ "${1}" == "" ]]; then
-		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && do_test"
-	else
-		find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && do_test ${*}"
-	fi
-elif [[ "${1}" == "e2e-watch" ]]; then
+watch-restore)
+	do_test="1"
+	do_watch="1"
+	do_restore="1"
 	shift
+	;;
 
-	find go.mod main.go pkg test | entr -n -cc -s "go vet ./... && do_test_e2e"
-elif [[ "${1}" == "restore" ]]; then
+e2e-restore)
+	do_test_e2e="1"
+	do_restore="1"
 	shift
+	;;
 
-	go vet ./...
+e2e-watch)
+	do_test_e2e="1"
+	do_watch="1"
+	shift
+	;;
 
-	./env.sh restore
+e2e-watch-restore)
+	do_test_e2e="1"
+	do_watch="1"
+	do_restore="1"
+	shift
+	;;
 
-	if [[ "${1}" == "" ]]; then
-		do_test
-	else
-		do_test "${@}"
-	fi
-elif [[ "${1}" == "e2e-restore" ]]; then
-	go vet ./...
+e2e)
+	do_test_e2e="1"
+	shift
+	;;
 
-	./env.sh restore
+*)
+	do_test="1"
+	;;
 
-	do_test_e2e
-elif [[ "${1}" == "e2e" ]]; then
-	go vet ./...
+esac
 
-	do_test_e2e
-elif [[ "${1}" == "" ]]; then
-	go vet ./...
+# command="go vet ./... && staticcheck ./..."
+command=""
 
-	do_test
-else
-	go vet ./...
-
-	do_test "${@}"
+if [[ "${do_restore}" == "1" ]]; then
+	command="./env.sh restore"
 fi
+
+args=""
+for arg in "${@}"; do
+	printf -v quoted_arg "%q" "${arg}"
+	args="${args} ${quoted_arg}"
+done
+
+if [[ "${do_test_e2e}" == "1" ]]; then
+	command="${command}${command:+ && }do_test_e2e${args}"
+elif [[ "${do_test}" == "1" ]]; then
+	command="${command}${command:+ && }do_test${args}"
+fi
+
+command="set -e; ${command}"
+
+if [[ "${do_watch}" == "1" ]]; then
+	find go.mod main.go pkg test | entr -n -cc -s "${command}"
+else
+	bash -c "${command}"
+fi
+
+exit 0

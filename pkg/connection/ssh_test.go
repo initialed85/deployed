@@ -92,15 +92,15 @@ func TestSSH(t *testing.T) {
 		require.NotEmpty(t, stdout)
 		require.Empty(t, stderr)
 
-		stdout, stderr, err = c.RunCommand("cd /srv/")
+		_, _, err = c.RunCommand("cd /srv/")
 		require.NoError(t, err)
 
-		stdout, stderr, err = c.RunCommand("pwd")
+		stdout, _, err = c.RunCommand("pwd")
 		require.NoError(t, err)
 		require.NotEmpty(t, stdout)
 		require.Equal(t, fmt.Sprintf("/home/%s\n", c.GetUsername()), stdout)
 
-		stdout, stderr, err = c.RunCommand("echo ${PWD}")
+		stdout, _, err = c.RunCommand("echo ${PWD}")
 		require.NoError(t, err)
 		require.NotEmpty(t, stdout)
 		require.Equal(t, fmt.Sprintf("/home/%s\n", c.GetUsername()), stdout)

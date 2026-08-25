@@ -24,6 +24,10 @@ func (s *Step) Validate(rootPaths ...string) error {
 		rootPath = rootPaths[0]
 	}
 
+	//
+	// make sure any upload files or folders exist + apply the workspace path
+	//
+
 	for i, upload := range s.Uploads {
 		if strings.HasPrefix(upload.Local, "?") {
 			continue
@@ -35,9 +39,15 @@ func (s *Step) Validate(rootPaths ...string) error {
 
 		_, err := os.Stat(upload.Local)
 		if err != nil {
-			return fmt.Errorf("script.uploads[%d] refers to local file %#+v that does not exist", i, upload.Local)
+			return fmt.Errorf("script.uploads[%d] refers to local file or folder %#+v that does not exist", i, upload.Local)
 		}
+
+		s.Uploads[i] = upload
 	}
+
+	//
+	// resolve any external script files
+	//
 
 	if s.Script != "" && strings.HasPrefix(s.Script, "@") {
 		scriptPath := strings.TrimLeft(s.Script, "@")
@@ -48,25 +58,31 @@ func (s *Step) Validate(rootPaths ...string) error {
 
 		stat, err := os.Stat(scriptPath)
 		if err != nil {
-			return fmt.Errorf("script refers to local file %#+v that does not exist", scriptPath)
+			return fmt.Errorf("script refers to local file or folder %#+v that does not exist", scriptPath)
 		}
 
 		if stat.IsDir() {
-			return fmt.Errorf("script refers to local file %#+v that is a directory not a file", scriptPath)
+			return fmt.Errorf("script refers to local file or folder %#+v that is a directory not a file", scriptPath)
 		}
 
 		rawScript, err := os.ReadFile(scriptPath)
 		if err != nil {
-			return fmt.Errorf("script refers to local file %#+v that could not be read because %s", scriptPath, err)
+			return fmt.Errorf("script refers to local file or folder %#+v that could not be read because %s", scriptPath, err)
 		}
 
 		s.Script = string(rawScript)
 	}
 
-	for _, download := range s.Downloads {
+	//
+	// apply the workspace path to the downloads
+	//
+
+	for i, download := range s.Downloads {
 		if len(rootPath) > 0 && !strings.HasPrefix(download.Local, "/") {
 			download.Local = filepath.Join(rootPath, download.Local)
 		}
+
+		s.Downloads[i] = download
 	}
 
 	return nil

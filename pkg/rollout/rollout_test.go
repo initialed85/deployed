@@ -16,6 +16,48 @@ func TestRollout(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestRolloutRelativeUpload(t *testing.T) {
+	workspaceDir := t.TempDir()
+	workspacePath := filepath.Join(workspaceDir, "workspace.yaml")
+	payloadPath := filepath.Join(workspaceDir, "payload.txt")
+	remotePath := filepath.Join(workspaceDir, "uploaded.txt")
+
+	require.NoError(t, os.WriteFile(payloadPath, []byte("payload content\n"), 0o644))
+
+	workspaceYAML := fmt.Sprintf(`specs:
+  - name: rollout-relative-upload-test
+    steps:
+      - uploads:
+          - local: payload.txt
+            remote: %q
+        script: ""
+pools:
+  - name: local
+    targets:
+      - user:pass@__local__:0
+mappings:
+  - specs: [rollout-relative-upload-test]
+    pools: [local]
+`, remotePath)
+	require.NoError(t, os.WriteFile(workspacePath, []byte(workspaceYAML), 0o644))
+
+	c, err := connection.OpenLocal("__local__", 0, "user", "pass")
+	require.NoError(t, err)
+	defer c.Close()
+
+	cleanup := "rm -f deployed-deployment-rollout-relative-upload-test* deployed-step-rollout-relative-upload-test*"
+	_, _, err = c.RunCommand(cleanup)
+	require.NoError(t, err)
+	defer func() { _, _, _ = c.RunCommand(cleanup) }()
+
+	err = Rollout(workspacePath)
+	require.NoError(t, err)
+
+	contents, err := os.ReadFile(remotePath)
+	require.NoError(t, err)
+	require.Equal(t, "payload content\n", string(contents))
+}
+
 func TestRolloutBrokenYAML(t *testing.T) {
 	fixtures, err := filepath.Glob("../../test/rollout-modes/*-broken.yaml")
 	require.NoError(t, err)

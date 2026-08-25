@@ -19,7 +19,7 @@ type Mapping struct {
 }
 
 type Workspace struct {
-	rootPath string    `yaml:"-" json:"-"`
+	RootPath string    `yaml:"-" json:"-"`
 	Specs    []*Spec   `yaml:"specs,omitempty"`
 	Pools    []*Pool   `yaml:"pools,omitempty"`
 	Mappings []Mapping `yaml:"mappings"`
@@ -42,7 +42,7 @@ func (w *Workspace) PrettyFormat() string {
 
 func (w *Workspace) Validate(rootPaths ...string) error {
 	if len(rootPaths) > 0 {
-		w.rootPath = rootPaths[0]
+		w.RootPath = rootPaths[0]
 	}
 
 	//
@@ -59,6 +59,10 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 
 	for i, spec := range w.Specs {
 		for j, step := range spec.Steps {
+			//
+			// build a lookup of any downloads
+			//
+
 			for _, download := range step.Downloads {
 				if len(download.Name) == 0 {
 					continue
@@ -82,6 +86,10 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 
 				downloadsByLocal[download.Local] = downloadsForLocal
 			}
+
+			//
+			// resolve any uploads that refer to downloads from the lookup
+			//
 
 			for k, upload := range step.Uploads {
 				if !strings.HasPrefix(upload.Local, "?") {
@@ -187,6 +195,8 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 		existingTargets := make(map[string]struct{})
 
 		for j, pool := range mapping.Pools {
+			pool = pool.Clone()
+
 			adjustedTargets := make([]string, 0)
 
 			for k, target := range pool.Targets {
@@ -203,6 +213,10 @@ func (w *Workspace) Validate(rootPaths ...string) error {
 
 				adjustedTargets = append(adjustedTargets, target)
 			}
+
+			pool.Targets = adjustedTargets
+
+			mapping.Pools[j] = pool
 		}
 	}
 
@@ -228,21 +242,23 @@ func LoadWorkspace(workspaceYAMLPath string, requireSpecs bool, requirePools boo
 
 	workspacePath, _ := filepath.Split(workspaceYAMLPath)
 
-	wd, err := os.Getwd()
+	workspacePath, err = filepath.Abs(workspacePath)
 	if err != nil {
 		return nil, err
 	}
 
-	err = os.Chdir(workspacePath)
+	stat, err := os.Stat(workspacePath)
 	if err != nil {
 		return nil, err
 	}
 
-	defer func() {
-		_ = os.Chdir(wd)
-	}()
+	if !stat.IsDir() {
+		return nil, fmt.Errorf("assertion failed: %#+v should have been a folder but it was not", workspacePath)
+	}
 
-	err = workspace.Validate(workspacePath)
+	workspace.RootPath = workspacePath
+
+	err = workspace.Validate(workspace.RootPath)
 	if err != nil {
 		return nil, err
 	}

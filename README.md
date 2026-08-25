@@ -168,7 +168,8 @@ go install .
   - [WIP] Expose SSH layer at the scope of specific pool via an app entrypoint
     - [DONE] Run command (including with sudo)
     - [TODO] Upload a file / folder
-    - [TODO] Download a file / fold - [TODO] Split screen log monitor (lazy tmux?)
+    - [TODO] Download a file / fold
+    - [TODO] Split screen log monitor (lazy tmux?)
   - [TODO] Be able to name workspaces
   - [TODO] Cross-session env var support
     - [TODO] Inject some useful implicit ones; e.g. `DEPLOYED_META_HOST`, `DEPLOYED_META_USER`, `DEPLOYED_META_OS`, `DEPLOYED_META_ARCH`
@@ -188,6 +189,7 @@ go install .
   - [DONE] Provide `json-schema` file for the YAML (for our IDEs)
   - [DONE] Probably change to `pools + specs` per `mapping` item, have then just as name string mappings (doubt anyone will use the inline feature)
   - [TODO] Some kind of reusable library of Specs (or possibly even Steps?)
+  - [TODO] Some rules around retries for a Step's script (to avoid needing to write retries in bash inside the script)
 
 ### Debt
 
@@ -202,6 +204,8 @@ go install .
 ### Bugs
 
 - [DONE] Deal with potential local file path collisions for named downloads
+- [TODO] Deal with the local path of an upload being part of the hash
+- [TODO] Deal with the lack of any sort of content hash for an upload
 
 ## Dev notes
 
