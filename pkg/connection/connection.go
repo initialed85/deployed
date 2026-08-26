@@ -184,7 +184,10 @@ func (c *Connection) RunCommand(command string) (string, string, error) {
 
 	// the error might have been instant, but we wait to ensure we can fully drain stdout and stderr
 	if err != nil {
-		return stdout.String(), stderr.String(), fmt.Errorf("failed to run command %#+v because %s; stderr: ...\n\n%s", command, err, stderr.String())
+		return stdout.String(), stderr.String(), fmt.Errorf(
+			"failed to run command %#+v because %s; stdout: ...\n\n%s\n\nstderr: ...\n\n%s",
+			command, err, strings.TrimRight(stdout.String(), "\n"), strings.TrimRight(stderr.String(), "\n"),
+		)
 	}
 
 	if stderr.Len() > 0 {
