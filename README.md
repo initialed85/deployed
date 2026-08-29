@@ -199,13 +199,15 @@ go install .
 - [TODO] Support for SSH keys as well as passwords (how will this work with sudo?)
 - [TODO] Don't just stub out SSH host key validation
 - [TODO] Fix the hacked in ${USER} env handling
-- [TODO] Have a common abstraction for the Local and SSH connections
+- [DONE] Have a common abstraction for the Local and SSH connections
+- [TODO] Fix tests not working for macOS (portability issues)
 
 ### Bugs
 
 - [DONE] Deal with potential local file path collisions for named downloads
 - [TODO] Deal with the local path of an upload being part of the hash
 - [TODO] Deal with the lack of any sort of content hash for an upload
+- [DONE] Fix portability issue re: `/home/${USER}` and macOS
 
 ## Dev notes
 

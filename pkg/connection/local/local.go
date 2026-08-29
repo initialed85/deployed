@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/initialed85/deployed/pkg/connection/connection_types"
@@ -73,7 +74,11 @@ func (c *Connection) Close() {
 func (c *Connection) PrepareCommand(command string) (io.Reader, io.Reader, io.Writer, connection_types.RunPreparedCommandFn, context.CancelFunc, error) {
 	cmd := exec.Command("sh", "-c", command)
 
-	cmd.Dir = fmt.Sprintf("/home/%s", c.Username)
+	if runtime.GOOS != "darwin" {
+		cmd.Dir = fmt.Sprintf("/home/%s", c.Username)
+	} else {
+		cmd.Dir = fmt.Sprintf("/Users/%s", c.Username)
+	}
 
 	cmd.Env = make([]string, 0)
 
