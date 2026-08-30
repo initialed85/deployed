@@ -26,16 +26,27 @@ func (d *Deployment) GetID() uuid.UUID {
 }
 
 func (d *Deployment) Hash() (string, error) {
-	return Hash(d)
+	hashes := make([]string, 0)
+
+	for _, step := range d.Spec.Steps {
+		hash, err := step.Hash()
+		if err != nil {
+			return "", err
+		}
+
+		hashes = append(hashes, hash)
+	}
+
+	return Hash(hashes)
 }
 
-func (d *Deployment) HashFile(specs ...*Spec) string {
+func (d *Deployment) GetHashFileName(specs ...*Spec) string {
 	spec := d.Spec
 	if len(specs) > 0 {
 		spec = specs[0]
 	}
 
-	return HashFile("deployment", spec)
+	return GetHashFileName("deployment", spec)
 }
 
 func (d *Deployment) WriteHashLocally() (string, func(), error) {

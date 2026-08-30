@@ -11,7 +11,7 @@ import (
 )
 
 type Step struct {
-	ID        uuid.UUID  `yaml:"-" json:"-"`
+	ID        uuid.UUID  `yaml:"-"`
 	WithSudo  *bool      `yaml:"with_sudo,omitempty"` // nil implies inherit
 	Uploads   []Upload   `yaml:"uploads"`
 	Script    string     `yaml:"script"`
@@ -89,20 +89,101 @@ func (s *Step) Validate(rootPaths ...string) error {
 }
 
 func (s *Step) GetID() uuid.UUID {
+	if s.ID == zeroUUID {
+		s.ID = uuid.Must(uuid.NewRandom())
+	}
+
 	return s.ID
 }
 
 func (s *Step) Hash() (string, error) {
-	return Hash(s)
+	hashes := make([]any, 0)
+
+	//
+	// WithSudo
+	//
+
+	err := func() error {
+		hash, err := Hash(s.WithSudo)
+		if err != nil {
+			return err
+		}
+
+		hashes = append(hashes, hash)
+
+		return nil
+	}()
+	if err != nil {
+		return "", err
+	}
+
+	//
+	// Uploads
+	//
+
+	err = func() error {
+		for _, upload := range s.Uploads {
+			hash, err := upload.Hash()
+			if err != nil {
+				return err
+			}
+
+			hashes = append(hashes, hash)
+		}
+		return nil
+	}()
+	if err != nil {
+		return "", err
+	}
+
+	//
+	// Script
+	//
+
+	err = func() error {
+		hash, err := Hash(s.Script)
+		if err != nil {
+			return err
+		}
+
+		hashes = append(hashes, hash)
+
+		return nil
+	}()
+	if err != nil {
+		return "", err
+	}
+
+	//
+	// Downloads
+	//
+
+	err = func() error {
+		for _, download := range s.Downloads {
+			hash, err := download.Hash()
+			if err != nil {
+				return err
+			}
+
+			hashes = append(hashes, hash)
+		}
+
+		return nil
+	}()
+	if err != nil {
+		return "", err
+	}
+
+	return Hash(hashes)
 }
 
-func (s *Step) HashFile(specs ...*Spec) string {
+func (s *Step) GetHashFileName(specs ...*Spec) string {
 	var spec *Spec
 	if len(specs) > 0 {
 		spec = specs[0]
 	}
 
-	return HashFile("step", spec)
+	return GetHashFileName("step", spec)
 }
 
 func (s *Step) WriteHashLocally(spec *Spec) (string, func(), error) {

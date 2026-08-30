@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -14,24 +15,46 @@ import (
 	"github.com/initialed85/deployed/pkg/helpers/misc"
 )
 
-type Hashable interface {
-	GetID() uuid.UUID
-	Hash() (string, error)
-	HashFile(specs ...*Spec) string
-}
-
 func Hash(obj any) (string, error) {
 	data, err := json.Marshal(obj)
 	if err != nil {
 		return "", fmt.Errorf("failed to hash %#+v because %s", obj, err)
 	}
 
-	hash := sha256.Sum256(data)
+	rawHash := sha256.Sum256(data)
 
-	return hex.EncodeToString(hash[:]), nil
+	hash := hex.EncodeToString(rawHash[:])
+
+	return hash, nil
 }
 
-func HashFile(hashType string, spec *Spec) string {
+func HashFile(file *os.File) (string, error) {
+	hasher := sha256.New()
+
+	_, err := hasher.Write([]byte(file.Name()))
+	if err != nil {
+		return "", err
+	}
+
+	_, err = io.Copy(hasher, file)
+	if err != nil {
+		return "", err
+	}
+
+	rawHash := hasher.Sum(nil)
+
+	hash := hex.EncodeToString(rawHash[:])
+
+	return hash, nil
+}
+
+type Hashable interface {
+	GetID() uuid.UUID
+	Hash() (string, error)
+	GetHashFileName(specs ...*Spec) string
+}
+
+func GetHashFileName(hashType string, spec *Spec) string {
 	if spec == nil {
 		panic("spec unexpectedly nil for HashFile")
 	}
@@ -45,7 +68,7 @@ func WriteHashLocally(h Hashable, specs ...*Spec) (string, func(), error) {
 		return "", misc.Noop, err
 	}
 
-	hashPath := fmt.Sprintf("/tmp/%s.local-%s", h.HashFile(specs...), h.GetID())
+	hashPath := fmt.Sprintf("/tmp/%s.local-%s", h.GetHashFileName(specs...), h.GetID())
 
 	err = os.WriteFile(hashPath, []byte(hash), 0o777)
 	if err != nil {
@@ -60,7 +83,7 @@ func WriteHashLocally(h Hashable, specs ...*Spec) (string, func(), error) {
 }
 
 func LocalAndRemoteHashesMatch(hashType string, h Hashable, c connection_types.Deployable, specs ...*Spec) (bool, error) {
-	remoteHashPath := h.HashFile(specs...)
+	remoteHashPath := h.GetHashFileName(specs...)
 
 	out, _, _ := c.RunCommand(fmt.Sprintf("test -f '%s' && cat '%s'", remoteHashPath, remoteHashPath))
 
@@ -88,7 +111,7 @@ func WriteAttemptedHashToRemote(h Hashable, c connection_types.Deployable, specs
 		return err
 	}
 
-	remoteAttemptedHashPath := fmt.Sprintf("%s.attempted-%s", h.HashFile(specs...), h.GetID())
+	remoteAttemptedHashPath := fmt.Sprintf("%s.attempted-%s", h.GetHashFileName(specs...), h.GetID())
 
 	_, _, err = c.RunCommand(fmt.Sprintf("echo '%s' > '%s'", localHash, remoteAttemptedHashPath))
 	if err != nil {
@@ -99,9 +122,9 @@ func WriteAttemptedHashToRemote(h Hashable, c connection_types.Deployable, specs
 }
 
 func CommitRemoteHash(h Hashable, c connection_types.Deployable, specs ...*Spec) error {
-	remoteAttemptedHashPath := fmt.Sprintf("%s.attempted-%s", h.HashFile(specs...), h.GetID())
+	remoteAttemptedHashPath := fmt.Sprintf("%s.attempted-%s", h.GetHashFileName(specs...), h.GetID())
 
-	remoteHashPath := h.HashFile(specs...)
+	remoteHashPath := h.GetHashFileName(specs...)
 
 	_, _, err := c.RunCommand(fmt.Sprintf("mv -fv %s %s", remoteAttemptedHashPath, remoteHashPath))
 	if err != nil {

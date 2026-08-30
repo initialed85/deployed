@@ -206,7 +206,7 @@ go install .
 
 - [DONE] Deal with potential local file path collisions for named downloads
 - [TODO] Deal with the local path of an upload being part of the hash
-- [TODO] Deal with the lack of any sort of content hash for an upload
+- [DONE] Deal with the lack of any sort of content hash for an upload
 - [DONE] Fix portability issue re: `/home/${USER}` and macOS
 
 ## Dev notes

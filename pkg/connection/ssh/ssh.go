@@ -142,7 +142,7 @@ func (c *Connection) Close() {
 
 func (c *Connection) PrepareCommand(command string) (io.Reader, io.Reader, io.Writer, connection_types.RunPreparedCommandFn, context.CancelFunc, error) {
 	//
-	// TODO: all the SSH shit in here- pass cleanup out through the cancel func
+	// TODO(initialed85): all the SSH shit in here- pass cleanup out through the cancel func
 	//
 
 	sshSession, err := c.SSHClient.NewSession()
