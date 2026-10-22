@@ -254,7 +254,7 @@ func (c *Connection) UploadFolder(runCommandFn connection_types.RunCommandFn, ne
 
 	tempFile := fmt.Sprintf("/tmp/deployed-upload-folder-%s.tar.gz", uuid.Must(uuid.NewRandom()))
 
-	_, _, err := c.localConnection.RunCommand(fmt.Sprintf("tar czvf '%s' -C '%s' .", tempFile, localPath))
+	_, _, err := c.localConnection.RunCommand(fmt.Sprintf("COPYFILE_DISABLE=1 tar czvf '%s' --exclude='._*' --exclude='.DS_Store' -C '%s' .", tempFile, localPath))
 	if err != nil {
 		return fmt.Errorf("failed to upload %s to %s@%s:%d:%s because %s", localPath, c.Username, c.Host, c.Port, remotePath, err)
 	}
@@ -269,7 +269,7 @@ func (c *Connection) UploadFolder(runCommandFn connection_types.RunCommandFn, ne
 		return fmt.Errorf("failed to upload %s to %s@%s:%d:%s because %s", localPath, c.Username, c.Host, c.Port, remotePath, err)
 	}
 
-	_, _, err = runCommandFn(fmt.Sprintf("tar xzvf '%s' -C '%s'", tempFile, remotePath))
+	_, _, err = runCommandFn(fmt.Sprintf("find '%s' \\( -name '._*' -o -name '.DS_Store' \\) -exec rm -f {} +; tar xzvf '%s' --exclude='._*' --exclude='.DS_Store' -C '%s'", remotePath, tempFile, remotePath))
 	if err != nil {
 		return fmt.Errorf("failed to upload %s to %s@%s:%d:%s because %s", localPath, c.Username, c.Host, c.Port, remotePath, err)
 	}
