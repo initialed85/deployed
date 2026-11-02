@@ -20,6 +20,14 @@
 # 7f454c46 is ELF, cffaedfe is Mach-O 64-bit. Cheap insurance that a leg did not build for the wrong GOOS.
 #
 # Token: native Secret woodpecker/github-token -> PLUGIN_TOKEN via backend_options.kubernetes.secrets.
+#
+# Two things this publish step depends on, both learned the hard way. (1) The plugin replaces any asset whose
+# name already exists so a re-run cannot 422, and that match is exact and client-side: GitHub's list-assets
+# endpoint accepts a `name` query parameter and ignores it, so asking for one asset returns all six here.
+# An earlier revision deleted what it was handed. (2) A Secret whose value ends in a newline breaks the
+# authorization header and GitHub answers the create-release POST with 400 and "Problems parsing JSON" - that
+# is how deployed #2 built all three legs and then died at the publish step, with build-11 never published.
+# The Secret is stored newline-free and the plugin strips whitespace off the token regardless.
 steps:
   - name: resolve-build-number
     image: docker.io/library/golang:1.26.5
