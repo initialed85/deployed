@@ -1,0 +1,93 @@
+# GitHub Release on every push to master — the port of .github/workflows/release.yml (deleted in the same
+# commit): three legs (linux/amd64, linux/arm64, darwin/arm64), each tarred with a sha256, published as one
+# release with GitHub's generated notes.
+#
+# Why the three legs are three steps rather than a `matrix:` — a Woodpecker matrix multiplies the whole
+# workflow, so the publish step would run once per leg and create three releases. Instead one workflow builds
+# sequentially into a shared dist/. The legs must be sequential (depends_on chain), not parallel: build.sh
+# writes its binary to the repo root as ./deployed, which is one shared path in a shared workspace. GHA got
+# this for free because each matrix leg ran in its own checkout.
+#
+# The tag is derived from the build-N tags already in the repo, not from the pipeline number — see the long
+# note in macker/.woodpecker/release.yaml. Same reason, same rule.
+#
+# ./build.sh needs jq and golang:1.26.5 does not ship it (no jq, no file, no upx in that image), so the jq
+# install replaces GHA's "Install build tools" step. upx is deliberately not installed: build.sh only runs
+# upx when COMPRESS=1 and this workflow passes COMPRESS=0 exactly as the Actions workflow did, so installing
+# it would be cargo cult. If compression is ever wanted, add the package and flip COMPRESS.
+#
+# Format check: `file` is absent from the image, so each artifact's magic bytes are asserted instead -
+# 7f454c46 is ELF, cffaedfe is Mach-O 64-bit. Cheap insurance that a leg did not build for the wrong GOOS.
+#
+# Token: native Secret woodpecker/github-token -> PLUGIN_TOKEN via backend_options.kubernetes.secrets.
+steps:
+  - name: resolve-build-number
+    image: docker.io/library/golang:1.26.5
+    commands:
+      - git ls-remote --tags --refs "https://github.com/$CI_REPO.git" > build-tags.txt
+      - test -s build-tags.txt
+      - sed -n 's#.*refs/tags/##p' build-tags.txt | grep -E '^build-[0-9]+$' | sort -V | tail -n 1 | sed 's#^build-##' > build-number.txt
+      - test -s build-number.txt || echo 0 > build-number.txt
+      - mkdir -p .build && echo "build-$(( $(cat build-number.txt) + 1 ))" > .build/TAG
+      - echo "publishing $(cat .build/TAG), derived from the tags that already exist"
+      - sed -n 's#.*refs/tags/##p' build-tags.txt | grep -E '^build-[0-9]+$' | sort -V | tail -n 3
+
+  - name: build-linux-amd64
+    image: docker.io/library/golang:1.26.5
+    depends_on: [resolve-build-number]
+    commands:
+      - go version
+      - apt-get update -qq && apt-get install -y -qq --no-install-recommends jq
+      - jq --version
+      - go mod download || go mod download
+      - env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 COMPRESS=0 ./build.sh
+      - test "$(od -An -tx1 -N 4 ./deployed | tr -d ' ')" = 7f454c46
+      - mkdir -p dist && mv ./deployed dist/deployed-linux-amd64
+      - tar -C dist -czf dist/deployed-linux-amd64.tar.gz deployed-linux-amd64
+      - (cd dist && sha256sum deployed-linux-amd64.tar.gz > deployed-linux-amd64.tar.gz.sha256)
+
+  - name: build-linux-arm64
+    image: docker.io/library/golang:1.26.5
+    depends_on: [build-linux-amd64]
+    commands:
+      - apt-get update -qq && apt-get install -y -qq --no-install-recommends jq
+      - go mod download || go mod download
+      - env GOOS=linux GOARCH=arm64 CGO_ENABLED=0 COMPRESS=0 ./build.sh
+      - test "$(od -An -tx1 -N 4 ./deployed | tr -d ' ')" = 7f454c46
+      - mv ./deployed dist/deployed-linux-arm64
+      - tar -C dist -czf dist/deployed-linux-arm64.tar.gz deployed-linux-arm64
+      - (cd dist && sha256sum deployed-linux-arm64.tar.gz > deployed-linux-arm64.tar.gz.sha256)
+
+  - name: build-darwin-arm64
+    image: docker.io/library/golang:1.26.5
+    depends_on: [build-linux-arm64]
+    commands:
+      - apt-get update -qq && apt-get install -y -qq --no-install-recommends jq
+      - go mod download || go mod download
+      - env GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 COMPRESS=0 ./build.sh
+      - test "$(od -An -tx1 -N 4 ./deployed | tr -d ' ')" = cffaedfe
+      - mv ./deployed dist/deployed-darwin-arm64
+      - tar -C dist -czf dist/deployed-darwin-arm64.tar.gz deployed-darwin-arm64
+      - (cd dist && sha256sum deployed-darwin-arm64.tar.gz > deployed-darwin-arm64.tar.gz.sha256)
+      - ls -l dist
+
+  - name: release
+    image: docker.io/initialed85/wp-gh-release:latest
+    depends_on: [build-darwin-arm64]
+    settings:
+      tag_file: .build/TAG
+      generate_notes: true
+      files:
+        - dist/*.tar.gz
+        - dist/*.sha256
+    backend_options:
+      kubernetes:
+        secrets:
+          - name: github-token
+            key: token
+            target:
+              env: PLUGIN_TOKEN
+
+when:
+  - event: push
+    branch: master
