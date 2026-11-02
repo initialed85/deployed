@@ -5,3 +5,4 @@ deployed
 /.build/
 /build-tags.txt
 /build-number.txt
+/dist/
