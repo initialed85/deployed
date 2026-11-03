@@ -104,16 +104,18 @@ steps:
       # spec that failed never had its hash written. 310 failed TestRollout on both attempts, from a
       # 192.168.56.12 k3s install whose download GitHub refused; that is what the mirror above is for.
       - "grep -q -- '--- PASS: TestDeploy' /tmp/live-1.log && grep -q -- '--- PASS: TestRollout' /tmp/live-1.log || { sleep 30; go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-2.log 2>&1 || true; }"
-      - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-2.log || true"
-      - "grep -vE '^[0-9]{4}[-/]' /tmp/live-2.log | head -n 200 || true"
+      - "[ -f /tmp/live-2.log ] && grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-2.log || true"
+      - "[ -f /tmp/live-2.log ] && grep -vE '^[0-9]{4}[-/]' /tmp/live-2.log | head -n 200 || true"
       # Which guest fetched what from the mirror, which is the difference between the mirror having served the
       # tier and the tier having quietly gone back to GitHub.
       - tail -n 30 /tmp/deployed-k3s-mirror.log
       # Quoted because each contains ": ", which YAML reads as a mapping, and a mapping in commands: is the
-      # failure mode with no step logs at all. Over both attempts: green if either attempt passed the test,
-      # red if neither did, which also catches the lane quietly skipping instead of running the tier.
-      - "grep -h -- '--- PASS: TestDeploy' /tmp/live-1.log /tmp/live-2.log"
-      - "grep -h -- '--- PASS: TestRollout' /tmp/live-1.log /tmp/live-2.log"
+      # failure mode with no step logs at all. Over both attempts: green if either attempt passed the test, red
+      # if neither did, which also catches the lane quietly skipping instead of running the tier. A glob, not
+      # two filenames: the retry only writes its log when the retry runs, and 316 went red on grep's exit 2 for
+      # a missing /tmp/live-2.log after an attempt one that had already passed both tests.
+      - "grep -h -- '--- PASS: TestDeploy' /tmp/live-*.log"
+      - "grep -h -- '--- PASS: TestRollout' /tmp/live-*.log"
 
 when:
   - event: push
