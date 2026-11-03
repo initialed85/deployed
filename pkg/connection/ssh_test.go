@@ -134,7 +134,10 @@ func TestSSH(t *testing.T) {
 		require.Error(t, err)
 
 		// TODO(initialed85): fix the test harness requiring sudo
-		_, err = exec.Command("sh", "-c", fmt.Sprintf("sudo -n chown -fR '%s:%s' /tmp/etc", os.Getenv("USER"), os.Getenv("USER"))).Output()
+		//
+		// Numeric uid:gid because the live lane runs this as root in a container that ships no USER, where the
+		// name form asked chown to resolve an owner of ''.
+		_, err = exec.Command("sh", "-c", fmt.Sprintf("sudo -n chown -fR '%d:%d' /tmp/etc", os.Getuid(), os.Getgid())).Output()
 		require.NoError(t, err)
 
 		err = c.DownloadWithSudo("/etc", "/tmp/etc")

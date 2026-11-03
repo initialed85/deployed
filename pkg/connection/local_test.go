@@ -62,10 +62,17 @@ func TestLocal(t *testing.T) {
 		require.NotEmpty(t, stdout)
 		require.Empty(t, stderr)
 
-		stdout, stderr, err = c.RunCommand("cat /etc/shadow")
-		require.Error(t, err)
-		require.Empty(t, stdout)
-		require.NotEmpty(t, stderr)
+		// A local connection runs as whoever invoked it, so the assertions below only hold for an unprivileged
+		// one. The live lane runs its tests as root because root is what owns libvirtd, and there a forbidden file
+		// is a property of the harness rather than something deployed could get wrong.
+		rootRunner := os.Getuid() == 0
+
+		if !rootRunner {
+			stdout, stderr, err = c.RunCommand("cat /etc/shadow")
+			require.Error(t, err)
+			require.Empty(t, stdout)
+			require.NotEmpty(t, stderr)
+		}
 
 		stdout, stderr, err = c.RunCommandWithSudo("cat /etc/shadow")
 		require.NoError(t, err)
@@ -73,8 +80,10 @@ func TestLocal(t *testing.T) {
 		require.Empty(t, stderr)
 
 		_, _, _ = c.RunCommandWithSudo("rm -fv /var/log/weird-file.txt")
-		err = c.Upload("/tmp/some-file.txt", "/var/log/weird-file.txt")
-		require.Error(t, err)
+		if !rootRunner {
+			err = c.Upload("/tmp/some-file.txt", "/var/log/weird-file.txt")
+			require.Error(t, err)
+		}
 
 		err = c.UploadWithSudo("/tmp/some-file.txt", "/var/log/weird-file.txt")
 		require.NoError(t, err)
@@ -96,15 +105,20 @@ func TestLocal(t *testing.T) {
 		_, _, err = c.RunCommand("cd /srv/")
 		require.NoError(t, err)
 
+		// A fresh local connection starts in the invoking user's home directory, which is what the connection
+		// resolves HOME to. Reading it as /home plus $USER held until the live lane ran the suite as root: root's
+		// home is /root and a container leaves USER unset, so the expectation was neither of the two.
+		home := fmt.Sprintf("%s\n", os.Getenv("HOME"))
+
 		stdout, _, err = c.RunCommand("pwd")
 		require.NoError(t, err)
 		require.NotEmpty(t, stdout)
-		require.Equal(t, fmt.Sprintf("/home/%s\n", os.Getenv("USER")), stdout)
+		require.Equal(t, home, stdout)
 
 		stdout, _, err = c.RunCommand("echo ${PWD}")
 		require.NoError(t, err)
 		require.NotEmpty(t, stdout)
-		require.Equal(t, fmt.Sprintf("/home/%s\n", os.Getenv("USER")), stdout)
+		require.Equal(t, home, stdout)
 
 		// more output than the pipe buffer holds must still arrive in full
 		stdout, _, err = c.RunCommand("seq 1 5000")
@@ -135,8 +149,10 @@ func TestLocal(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		err = c.Download("/etc", "/tmp/etc")
-		require.Error(t, err)
+		if !rootRunner {
+			err = c.Download("/etc", "/tmp/etc")
+			require.Error(t, err)
+		}
 
 		err = c.DownloadWithSudo("/etc", "/tmp/etc")
 		require.NoError(t, err)

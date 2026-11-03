@@ -72,6 +72,11 @@ steps:
       # 'yes' or 'no': libvirt-init derives that line from a virsh probe, so the bare token matches a broken
       # start as happily as a good one and the failure surfaces later as something unrelated.
       - "grep -q 'LIBVIRT_READY: yes' /tmp/libvirt-init.log || { echo 'libvirt-init did not become ready'; exit 1; }"
+      # The image ships no sudo, and the suite's own harness shells out to it in two places: TestSSH re-owns
+      # /tmp/etc before merging a privileged download into it (333 died there with exit 127), TestLocal runs a
+      # command through it. Installing the one binary is cheaper and more honest than teaching both tests to
+      # skip when it is absent.
+      - command -v sudo > /dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq --no-install-recommends sudo; }
       - command -v go > /dev/null 2>&1 || { curl -fsSLo /tmp/go.tgz https://go.dev/dl/go1.26.5.linux-amd64.tar.gz && tar -C /usr/local -xzf /tmp/go.tgz; }
       - export PATH=/usr/local/go/bin:$PATH
       - go version
