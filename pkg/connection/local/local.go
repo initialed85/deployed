@@ -71,14 +71,29 @@ func (c *Connection) Close() {
 	// noop
 }
 
+// homeDir is the working directory a local command starts in.
+//
+// It used to be built from the username with a darwin/linux split (/home/<user> or /Users/<user>).
+// That is wrong for exactly the cases that reach CI: a local connection never switches user, so in a
+// container running as root it produced /home/root, which does not exist, and every command then
+// failed with a chdir error instead of the error the caller was testing for. The same guess breaks for
+// any home that is not under the conventional prefix. The process's own identity is the only relevant
+// one here, so the OS is the authority on its home; the path construction survives only as the
+// fallback when HOME is unset.
+func (c *Connection) homeDir() string {
+	if h := os.Getenv("HOME"); h != "" {
+		return h
+	}
+	if runtime.GOOS != "darwin" {
+		return fmt.Sprintf("/home/%s", c.Username)
+	}
+	return fmt.Sprintf("/Users/%s", c.Username)
+}
+
 func (c *Connection) PrepareCommand(command string) (io.Reader, io.Reader, io.Writer, connection_types.RunPreparedCommandFn, context.CancelFunc, error) {
 	cmd := exec.Command("sh", "-c", command)
 
-	if runtime.GOOS != "darwin" {
-		cmd.Dir = fmt.Sprintf("/home/%s", c.Username)
-	} else {
-		cmd.Dir = fmt.Sprintf("/Users/%s", c.Username)
-	}
+	cmd.Dir = c.homeDir()
 
 	cmd.Env = make([]string, 0)
 
