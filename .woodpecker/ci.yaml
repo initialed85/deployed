@@ -1,0 +1,21 @@
+# fmt, vet and the tests that do not need infrastructure.
+#
+# pkg/rollout is excluded: TestRolloutModes dials localhost:2221, which is the ubuntu-ssh-server container
+# that ./test.sh starts from Dockerfile.test before running the suite. That image is not published, so
+# there is nothing to put in `services:` yet. The honest options are to publish it (a step in the same
+# pipeline builds it, then the tests reference it) or to keep the exclusion; the exclusion is here for
+# now and the reason is in the file, so the next person sees it rather than rediscovering it.
+steps:
+  - name: test
+    image: docker.io/library/golang:1.26
+    commands:
+      - go version
+      - gofmt -l .
+      - test -z "$(gofmt -l .)"
+      - go vet $(go list ./... | grep -v '/pkg/rollout')
+      - go test -count=1 $(go list ./... | grep -v '/pkg/rollout')
+
+when:
+  - event: push
+    branch: master
+  - event: pull_request
