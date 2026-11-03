@@ -66,6 +66,13 @@ steps:
       # stdin is the pipe the step script itself arrived on, so anything that reads it gets a slice of
       # the rest of the script. vagrant shells out to ssh, which reads stdin.
       - vagrant up --provider=libvirt < /dev/null
+      # vagrant up returns when a guest answers SSH, not when it has finished booting, and the difference cost
+      # two red attempts. On 312 and 314 attempt one, the master guest pulled the hash and the 81 MB binary
+      # from the mirror, verified, installed, made the symlinks, killall, uninstall and the .env file - in about
+      # a second - and then died on the next installer step, the systemd one, with nothing on stderr. Thirty
+      # seconds later the same script worked on the same guest. is-system-running is the thing that says whether
+      # systemd is still taking jobs, so wait for it on every guest before pointing a test at one.
+      - "for n in node1 node2 node3 node4; do vagrant ssh $n -c 's=starting; for i in $(seq 1 30); do s=$(systemctl is-system-running 2>/dev/null || true); case $s in running|degraded) break;; esac; sleep 2; done; echo SYSTEMD_STATE $s' < /dev/null; done"
       - virsh -c qemu:///system list --all
       # Started here rather than by env.sh, which this lane does not use: the mirror binds 192.168.56.1, an
       # address that only exists once vagrant has built the private net. Backgrounded in the same shell the
