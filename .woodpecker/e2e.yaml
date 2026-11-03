@@ -74,14 +74,22 @@ steps:
       # Ask every guest, serially, for the two paths its own installer will ask for. This is the reachability
       # that was flaky, now measured against something on the pod's own bridge instead of GitHub.
       - "for n in node1 node2 node3 node4; do vagrant ssh $n -c 'curl -fsS --max-time 15 -o /dev/null http://192.168.56.1:8080/get.k3s.io && curl -fsS --max-time 60 -o /dev/null http://192.168.56.1:8080/k3s-io/k3s/releases/download/v1.36.2%2Bk3s1/k3s && echo PREFLIGHT_OK || echo PREFLIGHT_FAIL' < /dev/null; done"
+      # Pod-side, immediately before the tests: the pre-flight proved a guest can reach the mirror, this
+      # proves it is still serving. A guest script that cannot probe it falls back to GitHub, so if the mirror
+      # died between the two, the failure that follows looks like a GitHub failure - which is what 312 looked
+      # like, and it cost a run to find out that no log said which of the two it was.
+      - curl -fsS --max-time 10 -o /dev/null http://192.168.56.1:8080/get.k3s.io && echo MIRROR_ALIVE || echo MIRROR_DEAD
       # Not a pipe, and not go's exit code: a failing go test has to leave its log behind for the greps.
       # A stalled SSH session can park a test forever (x/crypto has no keepalive and Config.Timeout only
       # covers the handshake), so the tier gets a deadline: a hang has to fail the step, not eat it.
       - go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-1.log 2>&1 || true
-      # The spine of what the tier did, then the raw tail for detail. tail alone shows you only the last
-      # package, which is how a run that never passed TestDeploy looked identical to one that skipped it.
+      # The spine of what the tier did, then everything the tests said. The filter is by timestamp, because
+      # deployed's own chatter always starts with a date (Go's logger writes slashes, this lane has seen dashes
+      # too) and test output never does: 8408 lines became 214 measured on a local run. The spine alone is not
+      # enough - in 312 TestDeploy failed in 1.85s and the only detail the log held was the last 40 lines of
+      # the *other* test, which said nothing about it.
       - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-1.log || true"
-      - tail -n 40 /tmp/live-1.log
+      - "grep -vE '^[0-9]{4}[-/]' /tmp/live-1.log | head -n 200 || true"
       # One retry, after a cooldown, because a red live lane is expensive to diagnose from one log: attempt
       # two runs against a lab that attempt one already half-installed, which is a different failure to look
       # at. It also exercises idempotency, which is the thing the tier is meant to prove - 306's second
@@ -90,7 +98,10 @@ steps:
       # 192.168.56.12 k3s install whose download GitHub refused; that is what the mirror above is for.
       - "grep -q -- '--- PASS: TestDeploy' /tmp/live-1.log && grep -q -- '--- PASS: TestRollout' /tmp/live-1.log || { sleep 30; go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-2.log 2>&1 || true; }"
       - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-2.log || true"
-      - tail -n 40 /tmp/live-2.log
+      - "grep -vE '^[0-9]{4}[-/]' /tmp/live-2.log | head -n 200 || true"
+      # Which guest fetched what from the mirror, which is the difference between the mirror having served the
+      # tier and the tier having quietly gone back to GitHub.
+      - tail -n 30 /tmp/deployed-k3s-mirror.log
       # Quoted because each contains ": ", which YAML reads as a mapping, and a mapping in commands: is the
       # failure mode with no step logs at all. Over both attempts: green if either attempt passed the test,
       # red if neither did, which also catches the lane quietly skipping instead of running the tier.
