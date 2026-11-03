@@ -46,7 +46,10 @@ So we're making our own.
   container that cannot hold that subnet, so it skips them by name, anchored (`TestDeploy$`,
   `TestRollout$`), and the unit tests in the same files still run. They are not impossible in CI: a
   privileged vagrant-libvirt agent brings the same four VMs up inside a step pod (`.woodpecker/e2e.yaml`),
-  so that skip list describes this lane, not a permanent rule about those tests.
+  so that skip list describes this lane, not a permanent rule about those tests. Both take them through
+  `fixture.RequireLiveTier`, which flocks the tier: `go test` runs packages in parallel, and two k3s installers
+  on one guest race in `systemd_disable` - one unlinks `/etc/systemd/system/k3s.service.env` while the other is
+  about to `chmod` it, which is every attempt-one red this lane used to have.
 - The lab serves its own k3s. `./env.sh up` builds and starts `tools/mirror` on `192.168.56.1:8080`,
   `.woodpecker/e2e.yaml` starts the same binary in the step pod, and the guest install scripts probe it and
   fall back to GitHub when nothing answers. Four guests pulling 81 MB from GitHub at the same instant is what
@@ -59,6 +62,7 @@ So we're making our own.
 - Testing is best done via `./test.sh` as it has a `restore` concept baked in that can restore the VMs and containers to snapshot taken when the environment was started
 - Before pushing anything the CI lane covers, run `./check-ci.sh`: it reads the commands out of `.woodpecker/ci.yaml`, runs them verbatim in a clean `golang:1.26` container, and reports the exit code it measured. A lane that only passes on a machine holding a lab is not a lane.
 - Measure exit codes instead of reading the last line of a pipeline; several failures here look green when piped.
+- The live lane runs its tests as root, in an Ubuntu container that ships no `USER` and no `sudo`. An assertion that something must fail *because the caller is unprivileged*, or an expectation built from `$USER`, is a claim about the harness there rather than about deployed: gate it on `os.Getuid()` or read `$HOME`. Reproduce that environment without a CI round trip: `docker run --rm --entrypoint bash -v "$PWD:/w:ro" -w /w docker.io/initialed85/ci-vagrant-libvirt:latest -lc '...'` with sudo and the Go toolchain installed as the lane installs them.
 
 ## Communication
 
