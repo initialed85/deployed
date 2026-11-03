@@ -101,9 +101,19 @@ func (c *Connection) PrepareCommand(command string) (io.Reader, io.Reader, io.Wr
 	for _, env := range os.Environ() {
 		if strings.HasPrefix(env, "PWD=") {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("PWD=%s", cmd.Dir))
+		} else if env == "USER=" {
+			continue
 		} else {
 			cmd.Env = append(cmd.Env, env)
 		}
+	}
+
+	// A spec writes ${USER} in upload and download paths, where this connection resolves it to the
+	// username it confirmed above.  A script is only a shell, so it has to be told the same thing or the
+	// two halves of one step disagree: in a container (which ships no USER) the paths said /home/root/...
+	// while the script said /home//....
+	if os.Getenv("USER") == "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("USER=%s", c.Username))
 	}
 
 	// exec's own pipes are closed by cmd.Run, which can happen while the caller is still reading them,

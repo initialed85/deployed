@@ -146,3 +146,19 @@ func TestLocal(t *testing.T) {
 		require.NotEmpty(t, b)
 	})
 }
+
+func TestLocalScriptSeesTheUsernameTheConnectionResolved(t *testing.T) {
+	// Uploads and downloads resolve ${USER} against the connection's own username.  A script is only a
+	// shell, so the shell has to be told the same thing - and a container ships no USER at all, which is
+	// where the two used to disagree.
+	t.Setenv("USER", "")
+
+	c, err := OpenLocal("__local__", 0, "${USER}", "${PASS}")
+	require.NoError(t, err)
+
+	require.NotEmpty(t, c.GetUsername())
+
+	stdout, _, err := c.RunCommand("echo ${USER}")
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("%s\n", c.GetUsername()), stdout)
+}
