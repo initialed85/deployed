@@ -57,9 +57,11 @@ steps:
             memory: "8Gi"
     commands:
       - libvirt-init < /dev/null > /tmp/libvirt-init.log 2>&1 &
-      - for i in $(seq 1 60); do grep -q LIBVIRT_READY /tmp/libvirt-init.log && break; sleep 1; done
+      - "for i in $(seq 1 60); do grep -q 'LIBVIRT_READY: yes' /tmp/libvirt-init.log && break; sleep 1; done"
       - tail -n 20 /tmp/libvirt-init.log
-      - grep LIBVIRT_READY /tmp/libvirt-init.log
+      # 'yes' or 'no': libvirt-init derives that line from a virsh probe, so the bare token matches a broken
+      # start as happily as a good one and the failure surfaces later as something unrelated.
+      - "grep -q 'LIBVIRT_READY: yes' /tmp/libvirt-init.log || { echo 'libvirt-init did not become ready'; exit 1; }"
       - command -v go > /dev/null 2>&1 || { curl -fsSLo /tmp/go.tgz https://go.dev/dl/go1.26.5.linux-amd64.tar.gz && tar -C /usr/local -xzf /tmp/go.tgz; }
       - export PATH=/usr/local/go/bin:$PATH
       - go version
