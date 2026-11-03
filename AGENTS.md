@@ -38,9 +38,15 @@ So we're making our own.
   published, and the fixture cannot live in the container that runs the tests (a step script is uploaded
   to the path it already occupies locally, and folder uploads are staged through `/tmp`), so these skip
   themselves through `pkg/helpers/fixture.RequireSSH` when nothing is listening.
+- Serving that fixture from `services:` is not a shortcut either: our agents run on the Kubernetes
+  backend, where a service is a separate pod reachable as `ubuntu-ssh-server:2221` and never as
+  `localhost:2221`.
 - `TestDeploy` and `TestRollout` deploy to the real Vagrant VMs on `192.168.56.11`-`14` with hardcoded
-  credentials. They are a side effect, not a slow test, and must never run in CI; CI skips them by name,
-  anchored (`TestDeploy$`, `TestRollout$`), so the unit tests in the same files still run.
+  credentials. They are a side effect, not a slow test, and the fmt/vet/test lane is an unprivileged
+  container that cannot hold that subnet, so it skips them by name, anchored (`TestDeploy$`,
+  `TestRollout$`), and the unit tests in the same files still run. They are not impossible in CI: a
+  privileged vagrant-libvirt agent brings the same four VMs up, so that skip list describes this lane,
+  not a permanent rule about those tests.
 
 ## Verification
 

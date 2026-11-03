@@ -141,13 +141,14 @@ Three tiers, and the middle one is not obvious from the failure you get:
 | --- | --- | --- | --- |
 | Unit | nothing | everything not named below | yes |
 | SSH fixture | `localhost:2221`, the `ubuntu-ssh-server` container `./env.sh up` builds from `Dockerfile.test` | `TestSSH`, `TestDeployModes`, `TestRolloutModes`, `TestRolloutFolderMerge` | skips itself, with a message |
-| Live lab | the four Vagrant VMs on `192.168.56.11` to `.14` | `TestDeploy`, `TestRollout` | skipped by name |
+| Live lab | the four Vagrant VMs on `192.168.56.11` to `.14` | `TestDeploy`, `TestRollout` | skipped by name; this lane cannot hold that subnet |
 
 The fixture cannot be substituted by installing `openssh-server` in the CI container: it has to be a
 separate filesystem, because a step script is uploaded to the path it already occupies locally and
 folder uploads are staged through `/tmp`, so a co-resident sshd trips over the sticky bit. The image is
-not published either, so there is nothing to put under `services:` yet. That is why those four skip
-themselves (`pkg/helpers/fixture`) instead of being named in the skip list.
+not published either, so there is nothing to put under `services:` yet, and on our agents a service is
+a separate pod anyway - reachable as `ubuntu-ssh-server:2221`, never as `localhost:2221`. That is why
+those four skip themselves (`pkg/helpers/fixture`) instead of being named in the skip list.
 
 Before pushing:
 
