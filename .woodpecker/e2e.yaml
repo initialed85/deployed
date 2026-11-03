@@ -62,16 +62,31 @@ steps:
       # the rest of the script. vagrant shells out to ssh, which reads stdin.
       - vagrant up --provider=libvirt < /dev/null
       - virsh -c qemu:///system list --all
-      # Not a pipe, and not go's exit code: a failing go test has to leave its log behind for the tail,
-      # and the verdict comes from the greps below.
+      # The tier depends on the guests reaching GitHub. Ask one guest once, before four of them try at the
+      # same instant, so the log says which failure it is looking at: a lab that came up but cannot get out,
+      # or a test that broke for its own reasons. Same pinned URL the installer asks for, one flow at a time.
+      - vagrant ssh node1 -c "curl -sfL -o /dev/null https://github.com/k3s-io/k3s/releases/download/v1.36.2%2Bk3s1/sha256sum-amd64.txt && echo PREFLIGHT_GITHUB_OK || echo PREFLIGHT_GITHUB_FAIL" < /dev/null
+      # Not a pipe, and not go's exit code: a failing go test has to leave its log behind for the greps.
       # A stalled SSH session can park a test forever (x/crypto has no keepalive and Config.Timeout only
       # covers the handshake), so the tier gets a deadline: a hang has to fail the step, not eat it.
-      - go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live.log 2>&1 || true
-      - tail -n 30 /tmp/live.log
-      # Quoted because each contains ": ", which YAML reads as a mapping, and a mapping in commands:
-      # is the failure mode with no step logs at all.
-      - "grep -c -- '--- PASS: TestDeploy' /tmp/live.log"
-      - "grep -c -- '--- PASS: TestRollout' /tmp/live.log"
+      - go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-1.log 2>&1 || true
+      # The spine of what the tier did, then the raw tail for detail. tail alone shows you only the last
+      # package, which is how a run that never passed TestDeploy looked identical to one that skipped it.
+      - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-1.log || true"
+      - tail -n 40 /tmp/live-1.log
+      # One retry, after a cooldown, for the tier's only external dependency: the guests fetch a pinned k3s
+      # release from GitHub four at a time. The run on 2026-11-03 failed in the installer's *hash* file with
+      # [ERROR] Download failed after that burst, while the same guest fetched the same URL one at a time in
+      # 0.16s with a 200. The lab stays warm; only the specs that failed run again, because a spec that
+      # failed never had its hash written.
+      - "grep -q -- '--- PASS: TestDeploy' /tmp/live-1.log && grep -q -- '--- PASS: TestRollout' /tmp/live-1.log || { sleep 30; go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-2.log 2>&1 || true; }"
+      - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-2.log || true"
+      - tail -n 40 /tmp/live-2.log
+      # Quoted because each contains ": ", which YAML reads as a mapping, and a mapping in commands: is the
+      # failure mode with no step logs at all. Over both attempts: green if either attempt passed the test,
+      # red if neither did, which also catches the lane quietly skipping instead of running the tier.
+      - "grep -h -- '--- PASS: TestDeploy' /tmp/live-1.log /tmp/live-2.log"
+      - "grep -h -- '--- PASS: TestRollout' /tmp/live-1.log /tmp/live-2.log"
 
 when:
   - event: push
