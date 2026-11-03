@@ -54,12 +54,18 @@ type Hashable interface {
 	GetHashFileName(specs ...*Spec) string
 }
 
-func GetHashFileName(hashType string, spec *Spec) string {
+func GetHashFileName(hashType string, spec *Spec, indexes ...int) string {
 	if spec == nil {
 		panic("spec unexpectedly nil for HashFile")
 	}
 
-	return fmt.Sprintf("deployed-%s-%s.hash", hashType, spec.GetName())
+	name := fmt.Sprintf("deployed-%s-%s", hashType, spec.GetName())
+
+	for _, index := range indexes {
+		name = fmt.Sprintf("%s-%d", name, index)
+	}
+
+	return fmt.Sprintf("%s.hash", name)
 }
 
 func WriteHashLocally(h Hashable, specs ...*Spec) (string, func(), error) {
@@ -126,7 +132,7 @@ func CommitRemoteHash(h Hashable, c connection_types.Deployable, specs ...*Spec)
 
 	remoteHashPath := h.GetHashFileName(specs...)
 
-	_, _, err := c.RunCommand(fmt.Sprintf("mv -fv %s %s", remoteAttemptedHashPath, remoteHashPath))
+	_, _, err := c.RunCommand(fmt.Sprintf("mv -fv '%s' '%s'", remoteAttemptedHashPath, remoteHashPath))
 	if err != nil {
 		return err
 	}

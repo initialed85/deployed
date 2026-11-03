@@ -12,6 +12,7 @@ import (
 
 type Step struct {
 	ID        uuid.UUID  `yaml:"-"`
+	Index     int        `yaml:"-"`
 	WithSudo  *bool      `yaml:"with_sudo,omitempty"` // nil implies inherit
 	Uploads   []Upload   `yaml:"uploads"`
 	Script    string     `yaml:"script"`
@@ -183,7 +184,7 @@ func (s *Step) GetHashFileName(specs ...*Spec) string {
 		spec = specs[0]
 	}
 
-	return GetHashFileName("step", spec)
+	return GetHashFileName("step", spec, s.Index)
 }
 
 func (s *Step) WriteHashLocally(spec *Spec) (string, func(), error) {

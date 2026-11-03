@@ -34,6 +34,8 @@ func (s *Spec) Validate(rootPaths ...string) error {
 			return fmt.Errorf("spec.steps[%d].%s", i, err)
 		}
 
+		step.Index = i
+
 		s.Steps[i] = step
 	}
 

@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/initialed85/deployed/pkg/connection"
+	"github.com/initialed85/deployed/pkg/helpers/fixture"
 	"github.com/initialed85/deployed/pkg/helpers/pointers"
 	"github.com/initialed85/deployed/pkg/types"
 	"github.com/stretchr/testify/require"
@@ -23,7 +25,7 @@ func TestDeploy(t *testing.T) {
 
 set -e
 
-IP="$(hostname -i | cut -d ' ' -f 2)"
+IP="$(hostname -i)"
 
 curl -sfL https://get.k3s.io | K3S_TOKEN=some-token K3S_KUBECONFIG_MODE=644 INSTALL_K3S_VERSION=v1.36.2+k3s1 sh -s - server --advertise-address="${IP}" --node-ip="${IP}"
 
@@ -115,6 +117,8 @@ curl -sfL https://get.k3s.io | K3S_TOKEN=some-token K3S_KUBECONFIG_MODE=644 INST
 }
 
 func TestDeployModes(t *testing.T) {
+	fixture.RequireSSH(t)
+
 	modes := []struct {
 		name       string
 		upload     bool
@@ -240,4 +244,45 @@ printf 'script content\n' > '%s'
 			}
 		})
 	}
+}
+
+// Deploy() is also called with specs that never went through Spec.Validate, so it assigns the step
+// index itself. Without it every step of a spec shares one remote hash file, and two identical steps
+// collapse into one: the second sees the hash the first just committed and skips itself.
+func TestDeployStepHashesArePerStep(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "steps.log")
+	script := fmt.Sprintf("#!/bin/sh\necho run >> %q\n", marker)
+
+	deployment := types.Deployment{
+		Spec: (&types.Spec{
+			Steps: []types.Step{{Script: script}, {Script: script}},
+		}).TestOnlySetName("deploy-step-hashes-per-step"),
+		Target: "user:pass@__local__:0",
+	}
+
+	c, err := connection.OpenLocal("__local__", 0, "user", "pass")
+	require.NoError(t, err)
+	defer c.Close()
+
+	cleanup := "rm -f deployed-deployment-deploy-step-hashes-per-step* deployed-step-deploy-step-hashes-per-step*"
+	_, _, err = c.RunCommand(cleanup)
+	require.NoError(t, err)
+	defer func() { _, _, _ = c.RunCommand(cleanup) }()
+
+	tookAction, err := Deploy(deployment)
+	require.NoError(t, err)
+	require.True(t, tookAction)
+
+	contents, err := os.ReadFile(marker)
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(string(contents), "run"))
+
+	tookAction, err = Deploy(deployment)
+	require.NoError(t, err)
+	require.False(t, tookAction)
+
+	contents, err = os.ReadFile(marker)
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(string(contents), "run"))
 }

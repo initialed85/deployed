@@ -56,6 +56,9 @@ func Deploy(deployment types.Deployment) (bool, error) {
 	tookDeploymentAction := false
 
 	for i, step := range deployment.Spec.Steps {
+		// the step hash file names are per step, and a spec built without Spec.Validate has no index yet
+		step.Index = i
+
 		var tookStepAction = false
 		var stepHashesMatch = deploymentHashesMatch
 		var err error
@@ -254,7 +257,11 @@ func Deploy(deployment types.Deployment) (bool, error) {
 		return tookDeploymentAction, fmt.Errorf("failed to mark attempted steps as confirmed because %s", err)
 	}
 
-	log.Printf("deploy complete (took action)")
+	if tookDeploymentAction {
+		log.Printf("deploy complete (took action)")
+	} else {
+		log.Printf("deploy complete (nothing to do, but the deployment hash had changed)")
+	}
 
 	return tookDeploymentAction, nil
 }
