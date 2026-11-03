@@ -75,9 +75,12 @@ steps:
       - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-1.log || true"
       - tail -n 40 /tmp/live-1.log
       # One retry, after a cooldown, for the tier's only external dependency: the guests fetch a pinned k3s
-      # release from GitHub four at a time. The run on 2026-11-03 failed in the installer's *hash* file with
-      # [ERROR] Download failed after that burst, while the same guest fetched the same URL one at a time in
-      # 0.16s with a 200. The lab stays warm; only the specs that failed run again, because a spec that
+      # release from GitHub four at a time, and that dependency is flaky rather than broken. Pipeline 306 is
+      # the shape of it: the pre-flight fetch failed, attempt one passed TestDeploy (37.99s, four real
+      # installs) and failed TestRollout twice with [ERROR] Download failed, and a hand-run fetch of the same
+      # URL by the same guest in the same pod minutes later got a 302 over a clean TLS handshake. The retry,
+      # on a warm lab, passed both - and TestDeploy no-opping in 2.45s on the second attempt is the
+      # idempotency the tier is meant to prove anyway. Only specs that failed run again, because a spec that
       # failed never had its hash written.
       - "grep -q -- '--- PASS: TestDeploy' /tmp/live-1.log && grep -q -- '--- PASS: TestRollout' /tmp/live-1.log || { sleep 30; go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-2.log 2>&1 || true; }"
       - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-2.log || true"
