@@ -83,13 +83,13 @@ steps:
       # stdin is the pipe the step script itself arrived on, so anything that reads it gets a slice of
       # the rest of the script. vagrant shells out to ssh, which reads stdin.
       #
-      # 1536 rather than the Vagrantfile's 1024. This was the memory experiment and it is the reason the memory
-      # theory is gone: at 1024 a guest reported 950 MiB total with 570-690 MiB of swap in use on runs that went
-      # green, at 1536 node1 reports 1.4 GiB with 98 MiB of swap, and the attempt-one flake happened in both
-      # settings. What it did buy is a test bed that is not paging: four QEMU guests with a k3s server importing
-      # images inside an 8 Gi limit. Four at 1536 is 6 GiB of guest RAM, which is what the pod now asks the
-      # scheduler for. The lab keeps 1024: this variable is set here and nowhere else.
-      - DEPLOYED_VM_MEMORY=1536 vagrant up --provider=libvirt < /dev/null
+      # No DEPLOYED_VM_MEMORY here any more: 1536 is the Vagrantfile default, so the lab and this lane run the
+      # same size and a local run measures what this one measures. The memory theory is gone rather than
+      # mitigated - at 1024 a guest reported 950 MiB total with 570-690 MiB of swap in use on runs that went
+      # green, at 1536 node1 reports 1.4 GiB with 98 MiB, and the attempt-one flake happened in both. What 1536
+      # does buy is a test bed that is not paging: four QEMU guests with a k3s server importing images, 6 GiB of
+      # guest RAM, which is what the pod asks the scheduler for against its 8 Gi limit.
+      - vagrant up --provider=libvirt < /dev/null
       # vagrant up returns when a guest answers SSH, not when it has finished booting. This gate has not yet
       # bought anything: with it in place, 320 passed TestDeploy on attempt one (54.51s, a real install) and
       # failed TestRollout instead, where before it was TestDeploy that failed and TestRollout that did not.

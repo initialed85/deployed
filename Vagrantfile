@@ -40,8 +40,9 @@ NODES = {
   "node4" => { ssh_port: 12224, private_ip: "192.168.56.14" },
 }
 
-# Guest RAM, in MiB.  The live CI lane raises it with DEPLOYED_VM_MEMORY; see .woodpecker/e2e.yaml.
-VM_MEMORY = ENV.fetch("DEPLOYED_VM_MEMORY", 1024).to_i
+# Guest RAM, in MiB.  Four of these have to fit inside the live CI lane's 8 Gi pod, and the lab runs the same
+# size so that a local run measures what the lane measures.  DEPLOYED_VM_MEMORY overrides it.
+VM_MEMORY = ENV.fetch("DEPLOYED_VM_MEMORY", 1536).to_i
 
 # The bento/ubuntu-26.04 box is UEFI-only: GPT disk with an EFI System
 # Partition and no BIOS boot partition.  libvirt must boot it with OVMF
