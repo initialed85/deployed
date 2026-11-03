@@ -1,5 +1,11 @@
-# The live tier: four real VMs, a real k3s cluster, and TestDeploy/TestRollout against
-# 192.168.56.11-14. This is the lane ci.yaml's header says is possible but does not exist.
+# The live tier: four real VMs, a real k3s cluster, and the whole test suite against 192.168.56.11-14.
+#
+# The four SSH-fixture tests run here too, with DEPLOYED_SSH_FIXTURE pointing at node1. The fixture has to be
+# a separate filesystem from the test process (pkg/helpers/fixture explains why), and this backend cannot
+# provide one: a `services:` entry gets no Service object of its own - service.go creates one headless service
+# that selects every pod in the run, and serviceName() is only ever used as a pod name and a label - so there
+# is nothing to dial. A guest is a real separate filesystem, on a network this pod already owns, with the same
+# three users and passwords the fixture image creates.
 #
 # A separate file so the unit lane never pays for it: a privileged pod, a 7.9 GB image pull, and about
 # four minutes of booting before a test has been compiled. It runs on master pushes and on a manual
@@ -46,6 +52,10 @@ steps:
   - name: live-lab
     image: docker.io/initialed85/ci-vagrant-libvirt:latest
     privileged: true
+    environment:
+      # The SSH fixture, as node1. Set rather than left to the default, because fixture.RequireSSH treats a
+      # configured fixture as a promise: nothing answering on this address fails the test instead of skipping it.
+      DEPLOYED_SSH_FIXTURE: 192.168.56.11:22
     backend_options:
       kubernetes:
         resources:
@@ -104,7 +114,7 @@ steps:
       # Not a pipe, and not go's exit code: a failing go test has to leave its log behind for the greps.
       # A stalled SSH session can park a test forever (x/crypto has no keepalive and Config.Timeout only
       # covers the handshake), so the tier gets a deadline: a hang has to fail the step, not eat it.
-      - go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-1.log 2>&1 || true
+      - go test -count=1 -v -timeout 10m ./... > /tmp/live-1.log 2>&1 || true
       # The spine of what the tier did, then everything the tests said. The filter is by timestamp, because
       # deployed's own chatter always starts with a date (Go's logger writes slashes, this lane has seen dashes
       # too) and test output never does: 8408 lines became 214 measured on a local run. The spine alone is not
@@ -124,19 +134,22 @@ steps:
       # attempt no-opped TestDeploy in 2.45s, 308's in 2.60s. Only specs that failed run again, because a
       # spec that failed never had its hash written. 310 failed TestRollout on both attempts, from a
       # 192.168.56.12 k3s install whose download GitHub refused; that is what the mirror above is for.
-      - "grep -q -- '--- PASS: TestDeploy' /tmp/live-1.log && grep -q -- '--- PASS: TestRollout' /tmp/live-1.log || { sleep 30; go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-2.log 2>&1 || true; }"
+      - "grep -q -- '--- PASS: TestDeploy' /tmp/live-1.log && grep -q -- '--- PASS: TestRollout' /tmp/live-1.log && ! grep -qE -- '^(--- FAIL|FAIL|panic)' /tmp/live-1.log || { sleep 30; go test -count=1 -v -timeout 10m ./... > /tmp/live-2.log 2>&1 || true; }"
       - "[ -f /tmp/live-2.log ] && grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-2.log || true"
       - "[ -f /tmp/live-2.log ] && grep -vE '^[0-9]{4}[-/]' /tmp/live-2.log | head -n 200 || true"
       # Which guest fetched what from the mirror, which is the difference between the mirror having served the
       # tier and the tier having quietly gone back to GitHub.
       - tail -n 30 /tmp/deployed-k3s-mirror.log
+      # Which attempt is final: the retry only writes a log when it actually runs, and 316 went red on grep's
+      # exit 2 for a missing /tmp/live-2.log after an attempt one that had already passed both tests.
+      - "test -f /tmp/live-2.log && cp /tmp/live-2.log /tmp/live-final.log || cp /tmp/live-1.log /tmp/live-final.log"
       # Quoted because each contains ": ", which YAML reads as a mapping, and a mapping in commands: is the
-      # failure mode with no step logs at all. Over both attempts: green if either attempt passed the test, red
-      # if neither did, which also catches the lane quietly skipping instead of running the tier. A glob, not
-      # two filenames: the retry only writes its log when the retry runs, and 316 went red on grep's exit 2 for
-      # a missing /tmp/live-2.log after an attempt one that had already passed both tests.
-      - "grep -h -- '--- PASS: TestDeploy' /tmp/live-*.log"
-      - "grep -h -- '--- PASS: TestRollout' /tmp/live-*.log"
+      # failure mode with no step logs at all. These two are the point of the file: a green run here means the
+      # live tier ran rather than skipped itself. The third is what the step's exit code turns on, and it is
+      # the whole suite now - a lane that only checked the two live tests would let a broken fixture test pass.
+      - "grep -- '--- PASS: TestDeploy' /tmp/live-final.log"
+      - "grep -- '--- PASS: TestRollout' /tmp/live-final.log"
+      - "! grep -E -- '^(--- FAIL|FAIL|panic)' /tmp/live-final.log"
 
 when:
   - event: push

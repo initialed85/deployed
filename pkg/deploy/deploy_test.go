@@ -155,7 +155,8 @@ func TestDeployModes(t *testing.T) {
 	for _, mode := range modes {
 		mode := mode
 		t.Run(mode.name, func(t *testing.T) {
-			target := "user2:Password2@localhost:2221"
+			host, port := fixture.HostPort()
+			target := "user2:Password2@" + fixture.SSHAddress
 			specName := fmt.Sprintf("deploy-modes-%s", uuid.NewString())
 			remoteDir := fmt.Sprintf("/home/user2/%s", specName)
 			remoteUpload := fmt.Sprintf("%s/upload.txt", remoteDir)
@@ -168,7 +169,7 @@ func TestDeployModes(t *testing.T) {
 			err := os.WriteFile(localUpload, []byte("upload content\n"), 0o644)
 			require.NoError(t, err)
 
-			c, err := connection.OpenSSH("localhost", 2221, "user2", "Password2")
+			c, err := connection.OpenSSH(host, port, "user2", "Password2")
 			require.NoError(t, err)
 			defer c.Close()
 			defer func() {

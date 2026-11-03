@@ -137,7 +137,8 @@ func TestRolloutFolderMerge(t *testing.T) {
 
 	const remoteDir = "/home/user2/deployed-rollout-modes/folder-merge"
 
-	c, err := connection.OpenSSH("localhost", 2221, "user2", "Password2")
+	host, port := fixture.HostPort()
+	c, err := connection.OpenSSH(host, port, "user2", "Password2")
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -151,15 +152,16 @@ func TestRolloutFolderMerge(t *testing.T) {
 
 	fixturePath, err := filepath.Abs("../../test/rollout-modes/folder-merge.yaml")
 	require.NoError(t, err)
-	fixture, err := os.ReadFile(fixturePath)
+	workspace, err := os.ReadFile(fixturePath)
 	require.NoError(t, err)
 	workspacePath := filepath.Join(t.TempDir(), "workspace.yaml")
 	localDownloadFolder := filepath.Join(filepath.Dir(workspacePath), "folder-merge-download")
-	fixture = []byte(strings.NewReplacer(
+	workspace = []byte(strings.NewReplacer(
+		"@localhost:2221", "@"+fixture.SSHAddress,
 		"local: folder-merge-payload", fmt.Sprintf("local: %q", filepath.Join(filepath.Dir(fixturePath), "folder-merge-payload")),
 		"local: folder-merge-download", fmt.Sprintf("local: %q", localDownloadFolder),
-	).Replace(string(fixture)))
-	err = os.WriteFile(workspacePath, fixture, 0o644)
+	).Replace(string(workspace)))
+	err = os.WriteFile(workspacePath, workspace, 0o644)
 	require.NoError(t, err)
 
 	err = Rollout(workspacePath)
@@ -291,13 +293,14 @@ func TestRolloutModes(t *testing.T) {
 			remoteScript := fmt.Sprintf("%s/script.txt", mode.remoteDir)
 			remoteDownload := fmt.Sprintf("%s/download.txt", mode.remoteDir)
 
-			fixture, err := os.ReadFile(filepath.Join(fixtureDir, mode.fixture))
+			workspace, err := os.ReadFile(filepath.Join(fixtureDir, mode.fixture))
 			require.NoError(t, err)
-			fixture = []byte(strings.NewReplacer(
+			workspace = []byte(strings.NewReplacer(
+				"@localhost:2221", "@"+fixture.SSHAddress,
 				"local: download.txt", fmt.Sprintf("local: %q", localDownload),
 				"local: payload.txt", fmt.Sprintf("local: %q", filepath.Join(workspaceDir, "payload.txt")),
-			).Replace(string(fixture)))
-			err = os.WriteFile(workspacePath, fixture, 0o644)
+			).Replace(string(workspace)))
+			err = os.WriteFile(workspacePath, workspace, 0o644)
 			require.NoError(t, err)
 
 			payload, err := os.ReadFile(filepath.Join(fixtureDir, "payload.txt"))
@@ -305,7 +308,8 @@ func TestRolloutModes(t *testing.T) {
 			err = os.WriteFile(filepath.Join(workspaceDir, "payload.txt"), payload, 0o644)
 			require.NoError(t, err)
 
-			c, err := connection.OpenSSH("localhost", 2221, "user2", "Password2")
+			host, port := fixture.HostPort()
+			c, err := connection.OpenSSH(host, port, "user2", "Password2")
 			require.NoError(t, err)
 			defer c.Close()
 

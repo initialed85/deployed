@@ -140,15 +140,18 @@ Three tiers, and the middle one is not obvious from the failure you get:
 | Tier | Needs | Tests | In CI |
 | --- | --- | --- | --- |
 | Unit | nothing | everything not named below | yes |
-| SSH fixture | `localhost:2221`, the `ubuntu-ssh-server` container `./env.sh up` builds from `Dockerfile.test` | `TestSSH`, `TestDeployModes`, `TestRolloutModes`, `TestRolloutFolderMerge` | skips itself, with a message |
+| SSH fixture | a second filesystem running the users from `Dockerfile.test`; locally that is `localhost:2221`, the `ubuntu-ssh-server` container `./env.sh up` builds, in CI it is node1 via `DEPLOYED_SSH_FIXTURE` | `TestSSH`, `TestDeployModes`, `TestRolloutModes`, `TestRolloutFolderMerge` | yes, in `.woodpecker/e2e.yaml`; skips itself, with a message, in `ci.yaml` |
 | Live lab | the four Vagrant VMs on `192.168.56.11` to `.14` | `TestDeploy`, `TestRollout` | yes, in `.woodpecker/e2e.yaml`; skipped by name in `ci.yaml`, which cannot hold that subnet |
 
 The fixture cannot be substituted by installing `openssh-server` in the CI container: it has to be a
 separate filesystem, because a step script is uploaded to the path it already occupies locally and
-folder uploads are staged through `/tmp`, so a co-resident sshd trips over the sticky bit. The image is
-not published either, so there is nothing to put under `services:` yet, and on our agents a service is
-a separate pod anyway - reachable as `ubuntu-ssh-server:2221`, never as `localhost:2221`. That is why
-those four skip themselves (`pkg/helpers/fixture`) instead of being named in the skip list.
+folder uploads are staged through `/tmp`, so a co-resident sshd trips over the sticky bit. Nor by a
+`services:` entry: on our agents a service gets no Service object of its own, only a headless one that
+selects every pod in the run, so there is no address to dial. A live-lab guest is a separate filesystem
+already on a network the pod owns, provisioned with the same three users and passwords, which is why the
+live lane points `DEPLOYED_SSH_FIXTURE` at `192.168.56.11:22` and the four run there. Where no fixture is
+named they skip themselves (`pkg/helpers/fixture`); where one is named and nothing answers, that is a
+failing test rather than a skipped one.
 
 Before pushing:
 
@@ -164,9 +167,10 @@ test -z "$(gofmt -l .)" && go vet ./...
 measured exit code, because a lane that only passes on a machine holding a lab is not a lane.
 
 The live lab is not in `check-ci.sh` because it is not a container, it is a pod: `.woodpecker/e2e.yaml`
-runs `vagrant up --provider=libvirt` in a privileged step pod with nested KVM, then `TestDeploy` and
-`TestRollout` against the four guests, and fails if either one *skips* - which is what they do when
-nothing answers on `192.168.56.x`. A green live lane means the lab came up.
+runs `vagrant up --provider=libvirt` in a privileged step pod with nested KVM, then the whole suite against
+the four guests, and fails if `TestDeploy` or `TestRollout` *skips* - which is what they do when nothing
+answers on `192.168.56.x` - or if anything else in that final attempt is not clean. A green live lane means
+the lab came up and the suite ran.
 
 That tier installs k3s on four guests at once, which is an 81 MB pinned release times four, and GitHub has
 refused it in every live run so far (306, 308, 310 - reproducibly `TestRollout`, and `TestDeploy` once the

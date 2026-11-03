@@ -49,7 +49,8 @@ func TestSSH(t *testing.T) {
 		_, err = OpenSSH("__local__", 22, "${USER}", "${PASS}")
 		require.Error(t, err)
 
-		c, err := OpenSSH("localhost", 2221, "user2", "Password2")
+		host, port := fixture.HostPort()
+		c, err := OpenSSH(host, port, "user2", "Password2")
 		require.NoError(t, err)
 
 		defer c.Close()

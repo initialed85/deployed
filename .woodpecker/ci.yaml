@@ -20,16 +20,15 @@
 #    rsync is installed because local.go:163 shells out to it for uploads; the repo declares no
 #    system dependency for it, so it surfaces here as a test failure instead.
 #
-# The SSH-fixture tests (TestSSH, TestDeployModes, TestRolloutModes, TestRolloutFolderMerge) dial
-# localhost:2221, the ubuntu-ssh-server container ./env.sh up builds from Dockerfile.test. That image
-# is not published, so there is nothing to put under `services:`; and on our agents a service is a
-# separate pod in a headless Service, reachable as ubuntu-ssh-server:2221 and never as localhost:2221,
-# so serving the fixture that way would mean rewriting every test to fit the CI. They cannot be run by
-# installing openssh-server inside this container either: the fixture must be a separate filesystem,
-# because a step script is uploaded to the same path it occupies locally and folder uploads are staged
-# through /tmp, so a co-resident sshd trips over the sticky bit (measured: scp "permission denied" on
-# /tmp/deployed-upload-folder-*.tar.gz, and TestSSH's sudo probe leaking into stderr). They now skip
-# themselves via fixture.RequireSSH, which is why they are no longer named here.
+# The SSH-fixture tests (TestSSH, TestDeployModes, TestRolloutModes, TestRolloutFolderMerge) run in the live
+# lane now, where DEPLOYED_SSH_FIXTURE puts the fixture on node1. They cannot run here, and the reason is a
+# filesystem one: a step script is uploaded to the path it already occupies locally and folder uploads are
+# staged through /tmp, so a co-resident sshd trips over the sticky bit (measured: scp "permission denied" on
+# /tmp/deployed-upload-folder-*.tar.gz, and TestSSH's sudo probe leaking into stderr). A guest is a separate
+# filesystem; this container cannot be one for itself. Publishing the image would not help either - on our
+# agents a `services:` entry gets no Service object of its own, only a headless one over every pod in the run.
+# They skip here via fixture.RequireSSH, which is why they are no longer named in the skip list, and
+# fixture.RequireSSH fails instead of skipping wherever a lane has named a fixture and nothing answers there.
 #
 # The whole recipe was validated in a clean golang:1.26 container before pushing, with a measured
 # `go test` exit code of 0 - not the exit code of a pipe. An earlier version of this file excluded only
