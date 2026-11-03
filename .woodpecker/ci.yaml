@@ -1,28 +1,54 @@
-# fmt, vet and the tests that do not need infrastructure.
+# fmt, vet, and the tests that can run without infrastructure.
 #
-# `-skip` names four tests rather than excluding whole packages, so everything else in those packages
-# still runs. The four are the ones that dial localhost:2221, which is the `ubuntu-ssh-server` container
-# ./test.sh starts from Dockerfile.test before the suite. That image is not published, so there is
-# nothing to put in `services:` yet.
+# Two things about this suite are not obvious from reading it, and both are why this file looks the way
+# it does.
 #
-# The list was measured, not guessed: with the fixture stopped (the real CI condition) the failures are
-# TestSSH, TestDeployModes, TestRolloutModes and TestRolloutFolderMerge, and the rest of the suite is
-# green. The earlier version of this file excluded only pkg/rollout on the strength of one reading of
-# the failure, and it was wrong twice over - TestSSH and TestDeployModes were also infrastructure
-# tests, and pkg/connection's TestLocal was not one, so the exclusion was hiding a real bug.
+# 1. Some tests are LIVE. TestDeploy and TestRollout deploy to real VMs by IP with hardcoded
+#    credentials - rollout_test.go:16 reaches 192.168.56.11 (a k3s server, installed via get.k3s.io),
+#    .12, .13 and .14. They pass on a machine that can reach that subnet and fail with connection
+#    refused on one that cannot, so they are not merely slow, they are a side effect. They must never
+#    run in CI, and they are skipped here by name rather than by package so that the genuine unit
+#    tests in the same files (TestRolloutBrokenYAML, TestStepHash..., TestUploadHash...) still run.
+#    The skip list is anchored (TestDeploy$, TestRollout$) so it does not swallow those.
 #
-# The right fix is to publish the image (a step in this same pipeline builds it) and reference it under
-# `services:`, which removes the skip list entirely. Left as a follow-up rather than done here, because
-# it needs a registry decision that is not this lane's to make.
+# 2. The rest of the suite needs a NON-ROOT user. TestLocal asserts that `cat /etc/shadow` fails and
+#    that RunCommandWithSudo succeeds. As root the first assertion is simply wrong, so the lane creates
+#    a user with passwordless sudo and runs the tests as it. That is also what the tool is used for.
+#    rsync is installed because local.go:163 shells out to it for uploads; the repo declares no
+#    system dependency for it, so it surfaces here as a test failure instead.
+#
+# The four remaining skips are the tests that dial localhost:2221, the ubuntu-ssh-server container
+# ./test.sh starts from Dockerfile.test. That image is not published, so there is nothing to put under
+# `services:` yet; publishing it would let this lane drop those four names.
+#
+# The whole recipe was validated in a clean golang:1.26 container before pushing, with a measured
+# `go test` exit code of 0 - not the exit code of a pipe. An earlier version of this file excluded only
+# pkg/rollout, which was wrong in both directions: it hid TestLocal, where a real bug was waiting
+# (PrepareCommand built its working directory as /home/<username>, which is /home/root in a container
+# and does not exist), and it did not exclude the infrastructure tests that were failing.
 steps:
   - name: test
     image: docker.io/library/golang:1.26
     commands:
       - go version
+      - apt-get update -qq
+      - apt-get install -y -qq sudo rsync
+      - useradd -m -s /bin/bash ci
+      - 'echo "ci ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ci'
+      - chown -R ci:ci "$(pwd)"
       - gofmt -l .
       - test -z "$(gofmt -l .)"
-      - go vet ./...
-      - go test -count=1 -skip 'TestSSH|TestDeployModes|TestRolloutModes|TestRolloutFolderMerge' ./...
+      # su resets the environment, so $CI_WORKSPACE would not reach the inner shell. Expanding $(pwd)
+      # here pins the real workspace without hardcoding a path that depends on the clone's origin.
+      - su ci -c "export HOME=/home/ci; cd \"$(pwd)\"; go mod download"
+      - su ci -c "export HOME=/home/ci; cd \"$(pwd)\"; go vet ./..."
+      # The regex has ^-anchored-by-suffix names (TestDeploy$ so it does not swallow TestDeployModes,
+      # TestRollout$ so it does not swallow the pure unit tests in the same package). Building it in a
+      # variable keeps the $ literal: the outer shell expands $SKIP inside double quotes, and the inner
+      # single quotes then stop the ci shell from re-expanding it. Writing it inline with \$ would have
+      # handed go a literal backslash-dollar and matched nothing.
+      - SKIP='TestSSH|TestDeploy$|TestDeployModes|TestRollout$|TestRolloutModes|TestRolloutFolderMerge'
+      - su ci -c "export HOME=/home/ci; cd \"$(pwd)\"; go test -count=1 -skip '$SKIP' ./..."
 
 when:
   - event: push
