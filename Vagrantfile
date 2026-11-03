@@ -65,6 +65,14 @@ PROVISION_SCRIPT = <<~SHELL
   set -eux
   export DEBIAN_FRONTEND=noninteractive
 
+  # --- disable IPv6 ------------------------------------------------------
+  # The host has no IPv6 route, so IPv6 connect attempts from the guest
+  # fail with "Network is unreachable" and apt crawls through every AAAA
+  # before falling back to IPv4.  Disable IPv6 stack-wide, persistently.
+  echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/99-disable-ipv6.conf
+  echo "net.ipv6.conf.default.disable_ipv6 = 1" >> /etc/sysctl.d/99-disable-ipv6.conf
+  sysctl -p /etc/sysctl.d/99-disable-ipv6.conf >/dev/null
+
   apt-get update
   apt-get install -y openssh-server sudo curl
 
@@ -108,10 +116,13 @@ PROVISION_SCRIPT = <<~SHELL
   fi
 
   # --- deterministic inter-node name resolution ---------------------------
-  # Point our own hostname at our private-network IP (bento maps it to
-  # 127.0.1.1, which breaks anything that advertises its own hostname),
-  # then add /etc/hosts entries for every other node.
-  sed -i "s/^127\\.0\\.1\\.1 .*/192.168.56.1${idx} $(hostname)/" /etc/hosts
+  # Point our own hostname at its private-network IP.  Bento has used both
+  # 127.0.1.1 and 127.0.2.1 for this mapping; leaving either in place can
+  # make local hostname lookups choose loopback and stall network-aware tools.
+  hostname="$(hostname)"
+  sed -i -E "/^[[:space:]]*127\\.0\\.(1\\.1|2\\.1)[[:space:]]+.*[[:space:]]${hostname}([[:space:]]|$)/d" /etc/hosts
+  sed -i -E "/^[[:space:]]*192\\.168\\.56\\.1${idx}[[:space:]]+/d" /etc/hosts
+  echo "${want} ${hostname}" >> /etc/hosts
   for i in 1 2 3 4; do
     if [ "$i" != "$idx" ]; then
       grep -qE "[[:space:]]node${i}$" /etc/hosts ||
@@ -172,6 +183,15 @@ Vagrant.configure("2") do |config|
         # default (see forward_ports.rb).  That breaks the localhost:1222x
         # contract the rest of the harness (and macOS/other providers)
         # rely on.  Opt back in so libvirt matches the localhost+port model.
+        # The bento box only DHCPs the NIC whose MAC matches its netplan
+        # (QEMU's default 52:54:00:12:34:56); vagrant-libvirt randomises MACs,
+        # so the guest never takes a lease and we stall at "Waiting for domain
+        # to get an IP address".  Pin the MAC, and give each node its own
+        # management network + subnet so the four pinned MACs don't fight over
+        # one lease IP.
+        lv.management_network_mac     = "52:54:00:12:34:56"
+        lv.management_network_name    = "vagrant-#{name}"
+        lv.management_network_address = "192.168.12#{NODES.keys.index(name) + 2}.0/24"
         lv.forward_ssh_port = true
         lv.memory = 1024
         lv.cpus   = 1

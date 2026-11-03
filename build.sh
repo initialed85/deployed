@@ -8,7 +8,7 @@ function _do_build() {
 	jq <./schema/workspace.schema.json >./schema/workspace.schema.json.tmp
 	mv -f ./schema/workspace.schema.json.tmp ./schema/workspace.schema.json
 
-	go fmt .
+	go fmt ./...
 
 	go generate .
 

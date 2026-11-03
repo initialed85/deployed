@@ -28,11 +28,27 @@ So we're making our own.
 - If we need a clean tree to test something, ask first or work around it (copy files, use a scratch dir).
 - Never `git add`, `commit`, `push`, or `stash drop` without explicit instruction.
 
+## Test tiers
+
+`go test ./...` is not one suite, and reading a failure without knowing the tier sends you the wrong way:
+
+- Unit tests need nothing. These are what CI actually runs.
+- `TestSSH`, `TestDeployModes`, `TestRolloutModes` and `TestRolloutFolderMerge` dial `localhost:2221`,
+  the `ubuntu-ssh-server` container `./env.sh up` builds from `Dockerfile.test`. That image is not
+  published, and the fixture cannot live in the container that runs the tests (a step script is uploaded
+  to the path it already occupies locally, and folder uploads are staged through `/tmp`), so these skip
+  themselves through `pkg/helpers/fixture.RequireSSH` when nothing is listening.
+- `TestDeploy` and `TestRollout` deploy to the real Vagrant VMs on `192.168.56.11`-`14` with hardcoded
+  credentials. They are a side effect, not a slow test, and must never run in CI; CI skips them by name,
+  anchored (`TestDeploy$`, `TestRollout$`), so the unit tests in the same files still run.
+
 ## Verification
 
 - After editing tooling, syntax-check (`bash -n`) and run the relevant command to confirm it works.
 - Don't claim success without testing.
 - Testing is best done via `./test.sh` as it has a `restore` concept baked in that can restore the VMs and containers to snapshot taken when the environment was started
+- Before pushing anything the CI lane covers, run `./check-ci.sh`: it reads the commands out of `.woodpecker/ci.yaml`, runs them verbatim in a clean `golang:1.26` container, and reports the exit code it measured. A lane that only passes on a machine holding a lab is not a lane.
+- Measure exit codes instead of reading the last line of a pipeline; several failures here look green when piped.
 
 ## Communication
 

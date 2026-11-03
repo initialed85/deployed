@@ -147,6 +147,13 @@ compose_up() {
 	local cf
 	cf="$(compose_file)" || return 0
 	require_docker
+	# the openwrt image is aarch64; its build needs qemu emulators registered,
+	# which only happens once the binfmt service runs, so run it to completion
+	# before any build starts (compose orders services, not builds)
+	if grep -q '^\s*binfmt:' "$cf"; then
+		echo "env.sh: docker compose run binfmt (register qemu emulators)"
+		docker compose -f "$cf" run --rm binfmt >/dev/null 2>&1
+	fi
 	echo "env.sh: docker compose up --build (detached)"
 	docker compose -f "$cf" up -d --build
 }
@@ -159,6 +166,23 @@ compose_down() {
 	[[ -f "docker-compose.restore.yaml" ]] && args+=(-f "docker-compose.restore.yaml")
 	echo "env.sh: docker compose down --volumes --remove-orphans"
 	docker compose "${args[@]}" down --volumes --remove-orphans
+}
+
+libvirt_docker_firewall() {
+	[[ "$platform" == "linux" && "$provider" == "libvirt" ]] || return 0
+	command -v iptables >/dev/null 2>&1 || {
+		echo "env.sh: iptables is required to allow libvirt traffic through Docker" >&2
+		return 1
+	}
+
+	# Docker sets the host FORWARD policy to DROP.  Its DOCKER-USER chain is
+	# the supported place for traffic that must bypass Docker's own rules.
+	if ! sudo iptables -C DOCKER-USER -i virbr+ -j ACCEPT 2>/dev/null; then
+		sudo iptables -I DOCKER-USER 1 -i virbr+ -j ACCEPT
+	fi
+	if ! sudo iptables -C DOCKER-USER -o virbr+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; then
+		sudo iptables -I DOCKER-USER 2 -o virbr+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+	fi
 }
 
 vagrant_up() {
@@ -181,6 +205,7 @@ cmd_up() {
 	rm -f "$VAGRANT_SNAPSHOT_DIR"/*.save 2>/dev/null || true
 
 	compose_up
+	libvirt_docker_firewall
 
 	echo "env.sh: bringing up nodes on $platform/$arch via provider=${provider:-<default>}"
 	if [[ "$provider" == "qemu" ]]; then

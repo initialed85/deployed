@@ -2,7 +2,7 @@
 
 set -e
 
-IP="$(hostname -i | cut -d ' ' -f 2)"
+IP="$(hostname -i)"
 
 curl -sfL https://get.k3s.io | K3S_TOKEN=some-token K3S_KUBECONFIG_MODE=644 INSTALL_K3S_VERSION=v1.36.2+k3s1 sh -s - server --advertise-address="${IP}" --node-ip="${IP}"
 

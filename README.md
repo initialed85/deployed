@@ -28,6 +28,12 @@ A simple way to provision software on Linux servers, via SSH.
 - Deployment
   - The mapping of a Spec to a Target
 
+Each target remembers what was last deployed to it, in its home directory: `deployed-deployment-<spec>.hash`
+for the deployment as a whole, and `deployed-step-<spec>-<index>.hash` for each step. If the deployment
+hash matches, nothing runs; if it differs, each step is compared against its own hash, so changing one
+step does not re-run the others. Steps are numbered by their position in the spec, so inserting or
+reordering a step re-runs the steps after it.
+
 ## Installation
 
 You can install the latest release on Linux (AMD64 or ARM64) or macOS (ARM64 only):
@@ -126,6 +132,35 @@ CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" .
 # or even this, really (but you should train how you fight)
 go install .
 ```
+
+### Tests
+
+Three tiers, and the middle one is not obvious from the failure you get:
+
+| Tier | Needs | Tests | In CI |
+| --- | --- | --- | --- |
+| Unit | nothing | everything not named below | yes |
+| SSH fixture | `localhost:2221`, the `ubuntu-ssh-server` container `./env.sh up` builds from `Dockerfile.test` | `TestSSH`, `TestDeployModes`, `TestRolloutModes`, `TestRolloutFolderMerge` | skips itself, with a message |
+| Live lab | the four Vagrant VMs on `192.168.56.11` to `.14` | `TestDeploy`, `TestRollout` | skipped by name |
+
+The fixture cannot be substituted by installing `openssh-server` in the CI container: it has to be a
+separate filesystem, because a step script is uploaded to the path it already occupies locally and
+folder uploads are staged through `/tmp`, so a co-resident sshd trips over the sticky bit. The image is
+not published either, so there is nothing to put under `services:` yet. That is why those four skip
+themselves (`pkg/helpers/fixture`) instead of being named in the skip list.
+
+Before pushing:
+
+```shell
+./env.sh up                     # containers, VMs, snapshot
+./test.sh                       # all three tiers
+./test.sh e2e                   # the built binary rolling out test/k3s.yaml
+test -z "$(gofmt -l .)" && go vet ./...
+./check-ci.sh                   # the .woodpecker/ci.yaml lane, verbatim, in a clean container
+```
+
+`./check-ci.sh` reads the commands out of `ci.yaml` rather than duplicating them and reports the
+measured exit code, because a lane that only passes on a machine holding a lab is not a lane.
 
 ## Tasks
 
@@ -282,7 +317,7 @@ Dev workflow is something like this (manual control):
 ./env.sh restore
 
 # run the e2e tests
-./test.sh
+./test.sh e2e
 
 # run a subset of the tests
 ./test.sh ./pkg/connection
