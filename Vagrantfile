@@ -191,7 +191,12 @@ Vagrant.configure("2") do |config|
         # one lease IP.
         lv.management_network_mac     = "52:54:00:12:34:56"
         lv.management_network_name    = "vagrant-#{name}"
-        lv.management_network_address = "192.168.12#{NODES.keys.index(name) + 2}.0/24"
+        # node1 must not sit on 192.168.122.0/24.  vagrant-libvirt resolves a management network by
+        # address (lookup_network_by_ip), so wherever libvirt ships its default network it is found
+        # first, the name check against vagrant-node1 fails, and the whole network creation rolls back
+        # with "Network not found: no network with matching name 'vagrant-node1'".  121 is
+        # vagrant-libvirt's own default range for the same reason, so the four nodes start above both.
+        lv.management_network_address = "192.168.13#{NODES.keys.index(name) + 1}.0/24"
         lv.forward_ssh_port = true
         lv.memory = 1024
         lv.cpus   = 1
