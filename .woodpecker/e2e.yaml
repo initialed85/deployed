@@ -51,7 +51,7 @@ steps:
         resources:
           requests:
             cpu: "2"
-            memory: "4Gi"
+            memory: "6Gi"
           limits:
             cpu: "4"
             memory: "8Gi"
@@ -67,7 +67,14 @@ steps:
       - go version
       # stdin is the pipe the step script itself arrived on, so anything that reads it gets a slice of
       # the rest of the script. vagrant shells out to ssh, which reads stdin.
-      - vagrant up --provider=libvirt < /dev/null
+      #
+      # 1536 rather than the Vagrantfile's 1024, and this is the memory experiment rather than a settled
+      # number: a 1024 guest reports 950 MiB total with 570-690 MiB of swap in use even on a run that goes
+      # green, and every attempt-one failure here is sudo failing to authenticate on the master guest during a
+      # real k3s install - four QEMU guests plus a k3s server importing images inside an 8 Gi limit. Four at
+      # 1536 is 6 GiB of guest RAM, which is also what the pod now asks the scheduler for. The lab keeps 1024:
+      # this variable is set here and nowhere else.
+      - DEPLOYED_VM_MEMORY=1536 vagrant up --provider=libvirt < /dev/null
       # vagrant up returns when a guest answers SSH, not when it has finished booting. This gate has not yet
       # bought anything: with it in place, 320 passed TestDeploy on attempt one (54.51s, a real install) and
       # failed TestRollout instead, where before it was TestDeploy that failed and TestRollout that did not.

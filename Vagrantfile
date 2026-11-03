@@ -40,6 +40,9 @@ NODES = {
   "node4" => { ssh_port: 12224, private_ip: "192.168.56.14" },
 }
 
+# Guest RAM, in MiB.  The live CI lane raises it with DEPLOYED_VM_MEMORY; see .woodpecker/e2e.yaml.
+VM_MEMORY = ENV.fetch("DEPLOYED_VM_MEMORY", 1024).to_i
+
 # The bento/ubuntu-26.04 box is UEFI-only: GPT disk with an EFI System
 # Partition and no BIOS boot partition.  libvirt must boot it with OVMF
 # (or AAVMF on arm64) instead of the default SeaBIOS, otherwise the
@@ -158,7 +161,7 @@ Vagrant.configure("2") do |config|
 
       node.vm.provider "virtualbox" do |vb|
         vb.name   = "ubuntu26-#{name}"
-        vb.memory = 1024
+        vb.memory = VM_MEMORY
         vb.cpus   = 1
       end
 
@@ -198,13 +201,13 @@ Vagrant.configure("2") do |config|
         # vagrant-libvirt's own default range for the same reason, so the four nodes start above both.
         lv.management_network_address = "192.168.13#{NODES.keys.index(name) + 1}.0/24"
         lv.forward_ssh_port = true
-        lv.memory = 1024
+        lv.memory = VM_MEMORY
         lv.cpus   = 1
       end
 
       node.vm.provider "parallels" do |pr|
         pr.name   = "ubuntu26-#{name}"
-        pr.memory = 1024
+        pr.memory = VM_MEMORY
         pr.cpus   = 1
       end
 
@@ -213,7 +216,7 @@ Vagrant.configure("2") do |config|
         # Vagrantfile's forwarded_port host for id: "ssh"; point it at our
         # desired host port explicitly.
         q.ssh_port = cfg[:ssh_port]
-        q.memory   = 1024
+        q.memory   = VM_MEMORY
         q.cpus     = 1
 
         # Without this the plugin silently drops the private_network above and
