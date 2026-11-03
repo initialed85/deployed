@@ -68,12 +68,12 @@ steps:
       # stdin is the pipe the step script itself arrived on, so anything that reads it gets a slice of
       # the rest of the script. vagrant shells out to ssh, which reads stdin.
       #
-      # 1536 rather than the Vagrantfile's 1024, and this is the memory experiment rather than a settled
-      # number: a 1024 guest reports 950 MiB total with 570-690 MiB of swap in use even on a run that goes
-      # green, and every attempt-one failure here is sudo failing to authenticate on the master guest during a
-      # real k3s install - four QEMU guests plus a k3s server importing images inside an 8 Gi limit. Four at
-      # 1536 is 6 GiB of guest RAM, which is also what the pod now asks the scheduler for. The lab keeps 1024:
-      # this variable is set here and nowhere else.
+      # 1536 rather than the Vagrantfile's 1024. This was the memory experiment and it is the reason the memory
+      # theory is gone: at 1024 a guest reported 950 MiB total with 570-690 MiB of swap in use on runs that went
+      # green, at 1536 node1 reports 1.4 GiB with 98 MiB of swap, and the attempt-one flake happened in both
+      # settings. What it did buy is a test bed that is not paging: four QEMU guests with a k3s server importing
+      # images inside an 8 Gi limit. Four at 1536 is 6 GiB of guest RAM, which is what the pod now asks the
+      # scheduler for. The lab keeps 1024: this variable is set here and nowhere else.
       - DEPLOYED_VM_MEMORY=1536 vagrant up --provider=libvirt < /dev/null
       # vagrant up returns when a guest answers SSH, not when it has finished booting. This gate has not yet
       # bought anything: with it in place, 320 passed TestDeploy on attempt one (54.51s, a real install) and
@@ -82,11 +82,12 @@ steps:
       # answered degraded immediately in 316, 318 and 320 and gated nothing.
       - "for n in node1 node2 node3 node4; do vagrant ssh $n -c 'j=unknown; for i in $(seq 1 30); do j=$(systemctl list-jobs 2>/dev/null || true); [ \"$j\" = \"No jobs running.\" ] && break; sleep 2; done; echo BOOT_JOBS $j' < /dev/null; done"
       - virsh -c qemu:///system list --all
-      # Every failure this lane has had, in every test it has hit, is sudo failing to authenticate inside a
-      # guest session. So ask every guest for that capability before the tests do, and measure it on its own:
-      # -k first so this is a fresh authentication and not a cached ticket, -K after so the probe leaves nothing
-      # behind that the tests would then lean on. A SUDO_FAIL line here against a run that then fails is the
-      # diagnosis; a SUDO_FAIL that still goes green says the flake is not authentication at all.
+      # Standing negative control, kept because it killed a hypothesis rather than proving one: every attempt-one
+      # failure here carried a '[sudo: authenticate] Password:' line and that line is what sudo prints when it
+      # authenticates from -S, not what it prints when it fails to. This asks each guest for a fresh successful
+      # authentication just before the tests. It has said SUDO_OK on all four in runs that then went red, so
+      # authentication is not the flake. -k first so the answer is fresh, -K after so the probe leaves no ticket
+      # the tests could lean on and mistake for health.
       - 'for n in node1 node2 node3 node4; do vagrant ssh $n -c "echo Password2 | sudo -S -k true >/dev/null 2>&1 && echo SUDO_OK $n || echo SUDO_FAIL $n; sudo -K" < /dev/null; done'
       # Started here rather than by env.sh, which this lane does not use: the mirror binds 192.168.56.1, an
       # address that only exists once vagrant has built the private net. Backgrounded in the same shell the
@@ -111,11 +112,11 @@ steps:
       # the *other* test, which said nothing about it.
       - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-1.log || true"
       - "grep -vE '^[0-9]{4}[-/]' /tmp/live-1.log | head -n 200 || true"
-      # The guest as the tests left it, taken before the cooldown so it is the state that actually failed. Both
-      # red attempts one have died the same way: the installer reaches create_env_file, then stderr carries
-      # 'chmod: cannot access /etc/systemd/system/k3s.service.env: No such file or directory' beside a
-      # '[sudo: authenticate] Password:' - the touch that should have made the file made nothing, and the only
-      # candidate left is that disk or memory ran out mid-install. Nothing in this lane has ever measured that.
+      # The guest as the tests left it. This print is what falsified the memory theory: 329 (1024 MiB guests)
+      # reported 950 MiB total with 570-690 MiB of swap in use and went red on attempt one; 329's successor at
+      # 1536 reported 1.4 GiB with 98 MiB of swap and also went red on attempt one. Disk was never in question:
+      # 30 GiB with 6.4 GiB used. The flake was TestDeploy and TestRollout running a k3s install on the same
+      # guest at the same time - see the tier lock in pkg/helpers/fixture/live.go.
       - "vagrant ssh node1 -c 'df -h /; free -h; ls -l /etc/systemd/system/k3s* 2>&1; systemctl is-active k3s' < /dev/null || true"
       # One retry, after a cooldown, because a red live lane is expensive to diagnose from one log: attempt
       # two runs against a lab that attempt one already half-installed, which is a different failure to look

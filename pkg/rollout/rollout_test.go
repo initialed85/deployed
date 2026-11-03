@@ -13,6 +13,8 @@ import (
 )
 
 func TestRollout(t *testing.T) {
+	fixture.RequireLiveTier(t)
+
 	err := Rollout("../../test/k3s.yaml")
 	require.NoError(t, err)
 }

@@ -17,6 +17,8 @@ import (
 )
 
 func TestDeploy(t *testing.T) {
+	fixture.RequireLiveTier(t)
+
 	t.Run("K3sMaster", func(t *testing.T) {
 		target := "user2:Password2@192.168.56.11:22"
 
