@@ -75,6 +75,12 @@ steps:
       # answered degraded immediately in 316, 318 and 320 and gated nothing.
       - "for n in node1 node2 node3 node4; do vagrant ssh $n -c 'j=unknown; for i in $(seq 1 30); do j=$(systemctl list-jobs 2>/dev/null || true); [ \"$j\" = \"No jobs running.\" ] && break; sleep 2; done; echo BOOT_JOBS $j' < /dev/null; done"
       - virsh -c qemu:///system list --all
+      # Every failure this lane has had, in every test it has hit, is sudo failing to authenticate inside a
+      # guest session. So ask every guest for that capability before the tests do, and measure it on its own:
+      # -k first so this is a fresh authentication and not a cached ticket, -K after so the probe leaves nothing
+      # behind that the tests would then lean on. A SUDO_FAIL line here against a run that then fails is the
+      # diagnosis; a SUDO_FAIL that still goes green says the flake is not authentication at all.
+      - 'for n in node1 node2 node3 node4; do vagrant ssh $n -c "echo Password2 | sudo -S -k true >/dev/null 2>&1 && echo SUDO_OK $n || echo SUDO_FAIL $n; sudo -K" < /dev/null; done'
       # Started here rather than by env.sh, which this lane does not use: the mirror binds 192.168.56.1, an
       # address that only exists once vagrant has built the private net. Backgrounded in the same shell the
       # rest of the step runs in, so it is still serving when the tests dial in.
