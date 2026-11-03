@@ -6,10 +6,13 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/initialed85/deployed/pkg/helpers/fixture"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSSH(t *testing.T) {
+	fixture.RequireSSH(t)
+
 	err := os.WriteFile("/tmp/some-file.txt", []byte("this is a file\n"), 0o644)
 	require.NoError(t, err)
 
@@ -109,6 +112,14 @@ func TestSSH(t *testing.T) {
 		require.NoError(t, err)
 
 		b, err := os.ReadFile("/tmp/weird-file.txt")
+		require.NoError(t, err)
+		require.Len(t, b, 10_000_000)
+
+		// a single-file download has to create the local parent folder, as folder downloads already do
+		err = c.Download("/var/log/weird-file.txt", "/tmp/weird-file-nested-dir/weird-file.txt")
+		require.NoError(t, err)
+
+		b, err = os.ReadFile("/tmp/weird-file-nested-dir/weird-file.txt")
 		require.NoError(t, err)
 		require.Len(t, b, 10_000_000)
 

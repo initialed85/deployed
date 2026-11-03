@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/initialed85/deployed/pkg/connection"
+	"github.com/initialed85/deployed/pkg/helpers/fixture"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,6 +59,64 @@ mappings:
 	require.Equal(t, "payload content\n", string(contents))
 }
 
+// each step keeps its own remote hash file, so changing one step must not re-run the others
+func TestRolloutStepIdempotencyPerStep(t *testing.T) {
+	workspaceDir := t.TempDir()
+	workspacePath := filepath.Join(workspaceDir, "workspace.yaml")
+	unchangedMarker := filepath.Join(workspaceDir, "unchanged-step.log")
+	changedMarker := filepath.Join(workspaceDir, "changed-step.log")
+
+	workspaceYAML := func(changed string) string {
+		return fmt.Sprintf(`specs:
+  - name: rollout-step-idempotency-test
+    steps:
+      - script: |
+          #!/bin/sh
+          echo run >> %q
+      - script: |
+          #!/bin/sh
+          echo %s >> %q
+pools:
+  - name: local
+    targets:
+      - user:pass@__local__:0
+mappings:
+  - specs: [rollout-step-idempotency-test]
+    pools: [local]
+`, unchangedMarker, changed, changedMarker)
+	}
+
+	c, err := connection.OpenLocal("__local__", 0, "user", "pass")
+	require.NoError(t, err)
+	defer c.Close()
+
+	cleanup := "rm -f deployed-deployment-rollout-step-idempotency-test* deployed-step-rollout-step-idempotency-test*"
+	_, _, err = c.RunCommand(cleanup)
+	require.NoError(t, err)
+	defer func() { _, _, _ = c.RunCommand(cleanup) }()
+
+	countRuns := func(path string) int {
+		contents, err := os.ReadFile(path)
+		require.NoError(t, err)
+		return strings.Count(string(contents), "run")
+	}
+
+	require.NoError(t, os.WriteFile(workspacePath, []byte(workspaceYAML("run")), 0o644))
+	require.NoError(t, Rollout(workspacePath))
+	require.Equal(t, 1, countRuns(unchangedMarker))
+	require.Equal(t, 1, countRuns(changedMarker))
+
+	require.NoError(t, os.WriteFile(workspacePath, []byte(workspaceYAML("run")), 0o644))
+	require.NoError(t, Rollout(workspacePath))
+	require.Equal(t, 1, countRuns(unchangedMarker))
+	require.Equal(t, 1, countRuns(changedMarker))
+
+	require.NoError(t, os.WriteFile(workspacePath, []byte(workspaceYAML("run again")), 0o644))
+	require.NoError(t, Rollout(workspacePath))
+	require.Equal(t, 1, countRuns(unchangedMarker))
+	require.Equal(t, 2, countRuns(changedMarker))
+}
+
 func TestRolloutBrokenYAML(t *testing.T) {
 	fixtures, err := filepath.Glob("../../test/rollout-modes/*-broken.yaml")
 	require.NoError(t, err)
@@ -72,6 +131,8 @@ func TestRolloutBrokenYAML(t *testing.T) {
 }
 
 func TestRolloutFolderMerge(t *testing.T) {
+	fixture.RequireSSH(t)
+
 	const remoteDir = "/home/user2/deployed-rollout-modes/folder-merge"
 
 	c, err := connection.OpenSSH("localhost", 2221, "user2", "Password2")
@@ -200,6 +261,8 @@ func TestRolloutLocalDownloads(t *testing.T) {
 }
 
 func TestRolloutModes(t *testing.T) {
+	fixture.RequireSSH(t)
+
 	modes := []struct {
 		name      string
 		fixture   string
