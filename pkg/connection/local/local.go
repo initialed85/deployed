@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -105,15 +106,21 @@ func (c *Connection) PrepareCommand(command string) (io.Reader, io.Reader, io.Wr
 		}
 	}
 
-	stdoutPipe, err := cmd.StdoutPipe()
+	// exec's own pipes are closed by cmd.Run, which can happen while the caller is still reading them,
+	// and everything left in the buffer is lost.  These write ends are ours, so they close after the
+	// command has finished and the readers see every byte, then EOF.
+	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
-	stderrPipe, err := cmd.StderrPipe()
+	stderrReader, stderrWriter, err := os.Pipe()
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
+
+	cmd.Stdout = stdoutWriter
+	cmd.Stderr = stderrWriter
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -125,20 +132,30 @@ func (c *Connection) PrepareCommand(command string) (io.Reader, io.Reader, io.Wr
 	go func() {
 		<-ctx.Done()
 
-		_ = stdoutPipe.Close()
-		_ = stderrPipe.Close()
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
 		_ = stdinPipe.Close()
 
 	}()
 
-	return stdoutPipe, stderrPipe, stdinPipe, cmd.Run, cancel, nil
+	run := func() error {
+		err := cmd.Run()
+
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
+
+		return err
+	}
+
+	return stdoutReader, stderrReader, stdinPipe, run, cancel, nil
 }
 
 func (c *Connection) doCopy(runCommandFn connection_types.RunCommandFn, localPath string, remotePath string) error {
 	localPath = strings.ReplaceAll(localPath, "${USER}", c.Username)
 	remotePath = strings.ReplaceAll(remotePath, "${USER}", c.Username)
 
-	// TODO(initialed85): is this a bug? why do we need this guard?
+	// step scripts are uploaded to the same path they occupy locally, so a local connection
+	// would be asked to copy a file onto itself, which rsync rejects
 	if localPath == remotePath {
 		return nil
 	}
@@ -158,6 +175,8 @@ func (c *Connection) doCopy(runCommandFn connection_types.RunCommandFn, localPat
 		}
 
 		_ = os.MkdirAll(remotePath, 0o777)
+	} else {
+		_ = os.MkdirAll(filepath.Dir(remotePath), 0o777)
 	}
 
 	_, _, err = runCommandFn(fmt.Sprintf("rsync -avc '%s' '%s'", localPath, remotePath))

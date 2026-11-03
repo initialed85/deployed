@@ -45,7 +45,7 @@ func Open(host string, port int, username string, password string) (connection_t
 	c := &Connection{
 		logger: log.New(
 			os.Stdout,
-			fmt.Sprintf("Local{%s@%s:%d} ", username, host, port),
+			fmt.Sprintf("SSH{%s@%s:%d} ", username, host, port),
 			log.Ldate|log.Ltime|log.Lmicroseconds|log.LUTC|log.Lmsgprefix,
 		),
 		Host:     host,
@@ -269,7 +269,7 @@ func (c *Connection) UploadFolder(runCommandFn connection_types.RunCommandFn, ne
 		return fmt.Errorf("failed to upload %s to %s@%s:%d:%s because %s", localPath, c.Username, c.Host, c.Port, remotePath, err)
 	}
 
-	_, _, err = runCommandFn(fmt.Sprintf("find '%s' \\( -name '._*' -o -name '.DS_Store' \\) -exec rm -f {} +; tar xzvf '%s' --exclude='._*' --exclude='.DS_Store' -C '%s'", remotePath, tempFile, remotePath))
+	_, _, err = runCommandFn(fmt.Sprintf("tar xzvf '%s' --exclude='._*' --exclude='.DS_Store' -C '%s'", tempFile, remotePath))
 	if err != nil {
 		return fmt.Errorf("failed to upload %s to %s@%s:%d:%s because %s", localPath, c.Username, c.Host, c.Port, remotePath, err)
 	}
@@ -290,6 +290,15 @@ func (c *Connection) DownloadFile(runCommandFn connection_types.RunCommandFn, ne
 	} else {
 		remotePathForTransfer = remotePath
 		localPathForTransfer = localPath
+	}
+
+	localFolderPathForTransfer, _ := filepath.Split(localPathForTransfer)
+
+	if len(localFolderPathForTransfer) > 0 {
+		err := os.MkdirAll(localFolderPathForTransfer, 0o777)
+		if err != nil {
+			return fmt.Errorf("failed to download file %s to %s@%s:%d:%s because %s", remotePath, c.Username, c.Host, c.Port, localPath, err)
+		}
 	}
 
 	f, err := os.Create(localPathForTransfer)
@@ -334,6 +343,15 @@ func (c *Connection) DownloadFile(runCommandFn connection_types.RunCommandFn, ne
 	_ = f.Close()
 
 	if needSudo {
+		localFolderPath, _ := filepath.Split(localPath)
+
+		if len(localFolderPath) > 0 {
+			_, _, err = c.localConnection.RunCommandWithSudo(fmt.Sprintf("mkdir -p '%s'", localFolderPath))
+			if err != nil {
+				return fmt.Errorf("failed to download file %s to %s@%s:%d:%s because %s", remotePath, c.Username, c.Host, c.Port, localPath, err)
+			}
+		}
+
 		_, _, err := c.localConnection.RunCommandWithSudo(fmt.Sprintf("mv -fv '%s' '%s'", localPathForTransfer, localPath))
 		if err != nil {
 			return fmt.Errorf("failed to download file %s to %s@%s:%d:%s because %s", remotePath, c.Username, c.Host, c.Port, localPath, err)

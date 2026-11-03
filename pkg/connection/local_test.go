@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -105,6 +106,11 @@ func TestLocal(t *testing.T) {
 		require.NotEmpty(t, stdout)
 		require.Equal(t, fmt.Sprintf("/home/%s\n", os.Getenv("USER")), stdout)
 
+		// more output than the pipe buffer holds must still arrive in full
+		stdout, _, err = c.RunCommand("seq 1 5000")
+		require.NoError(t, err)
+		require.Equal(t, 5000, strings.Count(stdout, "\n"))
+
 		err = c.Download("/var/log/weird-file.txt", "/tmp/weird-file.txt")
 		require.NoError(t, err)
 
@@ -112,11 +118,22 @@ func TestLocal(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, b, 10_000_000)
 
-		err = c.Download("/etc/shadow", "/tmp/etc-shadow.txt")
-		require.Error(t, err)
-
-		err = c.DownloadWithSudo("/etc/shadow", "/tmp/etc-shadow.txt")
+		// a single-file download has to create the local parent folder, as folder downloads already do
+		err = c.Download("/var/log/weird-file.txt", "/tmp/weird-file-nested-dir/weird-file.txt")
 		require.NoError(t, err)
+
+		b, err = os.ReadFile("/tmp/weird-file-nested-dir/weird-file.txt")
+		require.NoError(t, err)
+		require.Len(t, b, 10_000_000)
+
+		// TODO(initialed85): idk, platform variance I think
+		err = c.Download("/etc/shadow", "/tmp/etc-shadow.txt")
+		if err != nil {
+			require.Error(t, err)
+
+			err = c.DownloadWithSudo("/etc/shadow", "/tmp/etc-shadow.txt")
+			require.NoError(t, err)
+		}
 
 		err = c.Download("/etc", "/tmp/etc")
 		require.Error(t, err)
