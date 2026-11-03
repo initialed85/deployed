@@ -11,7 +11,8 @@
 #    skipped here by name rather than by package, which keeps the genuine unit tests in the same files
 #    (TestRolloutBrokenYAML, TestStepHash..., TestUploadHash...) running. The skip list is anchored
 #    (TestDeploy$, TestRollout$) so it does not swallow those. They are not impossible in CI, merely
-#    not possible in this step: a privileged vagrant-libvirt agent can bring up the same four VMs.
+#    not possible in this step: `.woodpecker/e2e.yaml` is a privileged nested-KVM lane that brings the
+#    same four VMs up inside its own step pod and runs them there.
 #
 # 2. The rest of the suite needs a NON-ROOT user. TestLocal asserts that `cat /etc/shadow` fails and
 #    that RunCommandWithSudo succeeds. As root the first assertion is simply wrong, so the lane creates

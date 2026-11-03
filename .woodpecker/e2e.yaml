@@ -1,0 +1,79 @@
+# The live tier: four real VMs, a real k3s cluster, and TestDeploy/TestRollout against
+# 192.168.56.11-14. This is the lane ci.yaml's header says is possible but does not exist.
+#
+# A separate file so the unit lane never pays for it: a privileged pod, a 7.9 GB image pull, and about
+# four minutes of booting before a test has been compiled. It runs on master pushes and on a manual
+# trigger (which is how you get a live run for something that is not master yet); a PR still gets the
+# unit lane and the workflow lint, which is where a broken spec shows up cheaply.
+#
+# One step, not a stage. vagrant-libvirt builds its bridges inside the pod's network namespace and the
+# live tests dial 192.168.56.x directly, so the tests have to run in the pod that owns libvirtd. A
+# second step is a second pod: different netns, different libvirtd, connection refused. libvirt-init is
+# backgrounded for the same reason - it never returns, it ends in a wait loop to keep virtlogd and
+# libvirtd alive, so as a detached step it would be alive in a pod nobody can reach.
+#
+# `privileged` is the only special permission needed, and it needs the repo's security trust (the linter
+# rejects a privileged step without it; deployed has it). A privileged pod sees every host device, so
+# /dev/kvm is simply there as crw-rw---- root 991. A `devices:` list would be dropped anyway: the
+# kubernetes backend never reads step.Devices (convert.go fills it, pod.go ignores it). No nodeSelector
+# or affinity either - both are refused from step on our agent, and the agent already pins every step
+# pod to ci-node=true, where all four CI nodes have /dev/kvm and nested=1.
+#
+# Resources are explicit because the namespace LimitRange otherwise gives a container 1 Gi, which
+# OOM-kills four 1 GiB guests. 4 CPU / 8 Gi is the shape four guests measured: about 4 Gi used, on a
+# 16 Gi node.
+#
+# No volume for /var/lib/libvirt/images, deliberately. `volumes:` needs the repo's volumes trust flag,
+# which deployed does not have, and the only class this agent offers is woodpecker-workspace - NFS,
+# where thin qcow2 with backing files is untested and 58 MB/s is not a disk to boot a lab from (1 GiB
+# wrote in 18.0s there against 0.35s on local ext4). The pool stays on the pod's own filesystem, which
+# is a real filesystem (overlay on the node's ext4, 179 GiB free), takes sparse files, qcow2 backing
+# chains, flock and O_DIRECT, holds the 3.1 GiB base box plus four thin guests, and dies with the pod.
+# That is the right lifetime for a CI lab: nothing to clean, nothing to leak between runs.
+#
+# The image ships no Go and go.mod wants 1.26.5, so the lane pins its own toolchain. Drop this line if
+# the image ever grows one.
+#
+# The last two greps are the point of the file. A green run here means the live tier *ran*: TestDeploy
+# and TestRollout skip themselves when nothing answers on 192.168.56.x, and a lane that quietly skipped
+# would be a lane that proves nothing.
+steps:
+  - name: live-lab
+    image: docker.io/initialed85/ci-vagrant-libvirt:latest
+    privileged: true
+    backend_options:
+      kubernetes:
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+    commands:
+      - libvirt-init < /dev/null > /tmp/libvirt-init.log 2>&1 &
+      - for i in $(seq 1 60); do grep -q LIBVIRT_READY /tmp/libvirt-init.log && break; sleep 1; done
+      - tail -n 20 /tmp/libvirt-init.log
+      - grep LIBVIRT_READY /tmp/libvirt-init.log
+      - command -v go > /dev/null 2>&1 || { curl -fsSLo /tmp/go.tgz https://go.dev/dl/go1.26.5.linux-amd64.tar.gz && tar -C /usr/local -xzf /tmp/go.tgz; }
+      - export PATH=/usr/local/go/bin:$PATH
+      - go version
+      # stdin is the pipe the step script itself arrived on, so anything that reads it gets a slice of
+      # the rest of the script. vagrant shells out to ssh, which reads stdin.
+      - vagrant up --provider=libvirt < /dev/null
+      - virsh -c qemu:///system list --all
+      # Not a pipe, and not go's exit code: a failing go test has to leave its log behind for the tail,
+      # and the verdict comes from the greps below.
+      # A stalled SSH session can park a test forever (x/crypto has no keepalive and Config.Timeout only
+      # covers the handshake), so the tier gets a deadline: a hang has to fail the step, not eat it.
+      - go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live.log 2>&1 || true
+      - tail -n 30 /tmp/live.log
+      # Quoted because each contains ": ", which YAML reads as a mapping, and a mapping in commands:
+      # is the failure mode with no step logs at all.
+      - "grep -c -- '--- PASS: TestDeploy' /tmp/live.log"
+      - "grep -c -- '--- PASS: TestRollout' /tmp/live.log"
+
+when:
+  - event: push
+    branch: master
+  - event: manual

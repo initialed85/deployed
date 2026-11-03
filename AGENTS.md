@@ -45,8 +45,8 @@ So we're making our own.
   credentials. They are a side effect, not a slow test, and the fmt/vet/test lane is an unprivileged
   container that cannot hold that subnet, so it skips them by name, anchored (`TestDeploy$`,
   `TestRollout$`), and the unit tests in the same files still run. They are not impossible in CI: a
-  privileged vagrant-libvirt agent brings the same four VMs up, so that skip list describes this lane,
-  not a permanent rule about those tests.
+  privileged vagrant-libvirt agent brings the same four VMs up inside a step pod (`.woodpecker/e2e.yaml`),
+  so that skip list describes this lane, not a permanent rule about those tests.
 
 ## Verification
 

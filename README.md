@@ -141,7 +141,7 @@ Three tiers, and the middle one is not obvious from the failure you get:
 | --- | --- | --- | --- |
 | Unit | nothing | everything not named below | yes |
 | SSH fixture | `localhost:2221`, the `ubuntu-ssh-server` container `./env.sh up` builds from `Dockerfile.test` | `TestSSH`, `TestDeployModes`, `TestRolloutModes`, `TestRolloutFolderMerge` | skips itself, with a message |
-| Live lab | the four Vagrant VMs on `192.168.56.11` to `.14` | `TestDeploy`, `TestRollout` | skipped by name; this lane cannot hold that subnet |
+| Live lab | the four Vagrant VMs on `192.168.56.11` to `.14` | `TestDeploy`, `TestRollout` | yes, in `.woodpecker/e2e.yaml`; skipped by name in `ci.yaml`, which cannot hold that subnet |
 
 The fixture cannot be substituted by installing `openssh-server` in the CI container: it has to be a
 separate filesystem, because a step script is uploaded to the path it already occupies locally and
@@ -162,6 +162,11 @@ test -z "$(gofmt -l .)" && go vet ./...
 
 `./check-ci.sh` reads the commands out of `ci.yaml` rather than duplicating them and reports the
 measured exit code, because a lane that only passes on a machine holding a lab is not a lane.
+
+The live lab is not in `check-ci.sh` because it is not a container, it is a pod: `.woodpecker/e2e.yaml`
+runs `vagrant up --provider=libvirt` in a privileged step pod with nested KVM, then `TestDeploy` and
+`TestRollout` against the four guests, and fails if either one *skips* - which is what they do when
+nothing answers on `192.168.56.x`. A green live lane means the lab came up.
 
 ## Tasks
 
