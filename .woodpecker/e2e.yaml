@@ -62,10 +62,11 @@ steps:
       # the rest of the script. vagrant shells out to ssh, which reads stdin.
       - vagrant up --provider=libvirt < /dev/null
       - virsh -c qemu:///system list --all
-      # The tier depends on the guests reaching GitHub. Ask one guest once, before four of them try at the
-      # same instant, so the log says which failure it is looking at: a lab that came up but cannot get out,
-      # or a test that broke for its own reasons. Same pinned URL the installer asks for, one flow at a time.
-      - vagrant ssh node1 -c "curl -sfL -o /dev/null https://github.com/k3s-io/k3s/releases/download/v1.36.2%2Bk3s1/sha256sum-amd64.txt && echo PREFLIGHT_GITHUB_OK || echo PREFLIGHT_GITHUB_FAIL" < /dev/null
+      # The tier depends on the guests reaching GitHub, and right after vagrant up they cannot: the
+      # pre-flight has failed on both 306 and 308 while the same fetch a minute later in the same pod got a
+      # 302 with a clean handshake. So ask every guest, serially, with cooldowns - which says in the log how
+      # long the path takes to settle, and means the four-wide burst is not the first thing it is asked to do.
+      - "for n in node1 node2 node3 node4; do vagrant ssh $n -c 'for i in 1 2 3 4 5; do curl -sfL -o /dev/null https://github.com/k3s-io/k3s/releases/download/v1.36.2%2Bk3s1/sha256sum-amd64.txt && break; sleep 10; done; curl -sfL -o /dev/null https://github.com/k3s-io/k3s/releases/download/v1.36.2%2Bk3s1/sha256sum-amd64.txt && echo PREFLIGHT_OK || echo PREFLIGHT_FAIL' < /dev/null; done"
       # Not a pipe, and not go's exit code: a failing go test has to leave its log behind for the greps.
       # A stalled SSH session can park a test forever (x/crypto has no keepalive and Config.Timeout only
       # covers the handshake), so the tier gets a deadline: a hang has to fail the step, not eat it.
@@ -81,7 +82,8 @@ steps:
       # URL by the same guest in the same pod minutes later got a 302 over a clean TLS handshake. The retry,
       # on a warm lab, passed both - and TestDeploy no-opping in 2.45s on the second attempt is the
       # idempotency the tier is meant to prove anyway. Only specs that failed run again, because a spec that
-      # failed never had its hash written.
+      # failed never had its hash written. Pipeline 308 was the same shape the other way round: attempt one
+      # failed both tests, the retry passed both (11.06s and 68.68s).
       - "grep -q -- '--- PASS: TestDeploy' /tmp/live-1.log && grep -q -- '--- PASS: TestRollout' /tmp/live-1.log || { sleep 30; go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-2.log 2>&1 || true; }"
       - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-2.log || true"
       - tail -n 40 /tmp/live-2.log

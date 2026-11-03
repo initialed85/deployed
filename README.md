@@ -170,9 +170,10 @@ nothing answers on `192.168.56.x`. A green live lane means the lab came up.
 
 That tier pulls one thing from the internet - a pinned k3s release, four guests at once - and it has been
 seen to fail there while the same guest fetched the same URL a minute later with a 302. The lane therefore
-prints the PASS/FAIL spine for every attempt, asks one guest for the pinned hash file before four of them
-try at once, and retries the tier once after a cooldown. A lane that only passes on the second attempt is
-still a lane worth having, provided the log says which attempt passed.
+prints the PASS/FAIL spine for every attempt, walks every guest through the pinned hash file serially with
+cooldowns before four of them are pointed at it at once, and retries the tier once after a cooldown. A lane
+that only passes on the second attempt is still a lane worth having, provided the log says which attempt
+passed.
 
 ## Tasks
 
