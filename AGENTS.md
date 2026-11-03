@@ -47,6 +47,10 @@ So we're making our own.
   `TestRollout$`), and the unit tests in the same files still run. They are not impossible in CI: a
   privileged vagrant-libvirt agent brings the same four VMs up inside a step pod (`.woodpecker/e2e.yaml`),
   so that skip list describes this lane, not a permanent rule about those tests.
+- The lab serves its own k3s. `./env.sh up` builds and starts `tools/mirror` on `192.168.56.1:8080`,
+  `.woodpecker/e2e.yaml` starts the same binary in the step pod, and the guest install scripts probe it and
+  fall back to GitHub when nothing answers. Four guests pulling 81 MB from GitHub at the same instant is what
+  made the live lane red; do not reintroduce that by hardcoding `get.k3s.io` into a spec.
 
 ## Verification
 

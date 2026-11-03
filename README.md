@@ -168,12 +168,15 @@ runs `vagrant up --provider=libvirt` in a privileged step pod with nested KVM, t
 `TestRollout` against the four guests, and fails if either one *skips* - which is what they do when
 nothing answers on `192.168.56.x`. A green live lane means the lab came up.
 
-That tier pulls one thing from the internet - a pinned k3s release, four guests at once - and it has been
-seen to fail there while the same guest fetched the same URL a minute later with a 302. The lane therefore
-prints the PASS/FAIL spine for every attempt, walks every guest through the pinned hash file serially with
-cooldowns before four of them are pointed at it at once, and retries the tier once after a cooldown. A lane
-that only passes on the second attempt is still a lane worth having, provided the log says which attempt
-passed.
+That tier installs k3s on four guests at once, which is an 81 MB pinned release times four, and GitHub has
+refused it in every live run so far (306, 308, 310 - reproducibly `TestRollout`, and `TestDeploy` once the
+burst had already spent the goodwill). Meanwhile a single fetch of the same release has never failed. So
+`tools/mirror` serves it on `192.168.56.1:8080` - the gateway of the private net the lab builds itself, on
+`./env.sh up` locally and inside the step pod in the lane - and the guest install scripts probe it for
+`/get.k3s.io` before falling back to GitHub. The lane prints the PASS/FAIL spine for every attempt, asks
+each guest to fetch the two paths its own installer will ask for, and retries the tier once after a cooldown.
+A lane that only passes on the second attempt is still a lane worth having, provided the log says which
+attempt passed.
 
 ## Tasks
 

@@ -37,6 +37,11 @@
 # The last two greps are the point of the file. A green run here means the live tier *ran*: TestDeploy
 # and TestRollout skip themselves when nothing answers on 192.168.56.x, and a lane that quietly skipped
 # would be a lane that proves nothing.
+#
+# k3s is served to the guests by tools/mirror on 192.168.56.1:8080, the gateway of the private net the pod
+# itself builds. Four guests each pulling an 81 MB pinned release from GitHub has been refused three times
+# out of three (306, 308, 310 - TestRollout reproducibly, TestDeploy after a warm-up); one flow here has not
+# failed once, and the guests then need no third party at all.
 steps:
   - name: live-lab
     image: docker.io/initialed85/ci-vagrant-libvirt:latest
@@ -62,11 +67,13 @@ steps:
       # the rest of the script. vagrant shells out to ssh, which reads stdin.
       - vagrant up --provider=libvirt < /dev/null
       - virsh -c qemu:///system list --all
-      # The tier depends on the guests reaching GitHub, and right after vagrant up they cannot: the
-      # pre-flight has failed on both 306 and 308 while the same fetch a minute later in the same pod got a
-      # 302 with a clean handshake. So ask every guest, serially, with cooldowns - which says in the log how
-      # long the path takes to settle, and means the four-wide burst is not the first thing it is asked to do.
-      - "for n in node1 node2 node3 node4; do vagrant ssh $n -c 'for i in 1 2 3 4 5; do curl -sfL -o /dev/null https://github.com/k3s-io/k3s/releases/download/v1.36.2%2Bk3s1/sha256sum-amd64.txt && break; sleep 10; done; curl -sfL -o /dev/null https://github.com/k3s-io/k3s/releases/download/v1.36.2%2Bk3s1/sha256sum-amd64.txt && echo PREFLIGHT_OK || echo PREFLIGHT_FAIL' < /dev/null; done"
+      # Started here rather than by env.sh, which this lane does not use: the mirror binds 192.168.56.1, an
+      # address that only exists once vagrant has built the private net. Backgrounded in the same shell the
+      # rest of the step runs in, so it is still serving when the tests dial in.
+      - "go build -o /tmp/deployed-k3s-mirror ./tools/mirror && (/tmp/deployed-k3s-mirror > /tmp/deployed-k3s-mirror.log 2>&1 &) && for i in $(seq 1 60); do grep -q MIRROR_READY /tmp/deployed-k3s-mirror.log && break; sleep 1; done; tail -n 5 /tmp/deployed-k3s-mirror.log"
+      # Ask every guest, serially, for the two paths its own installer will ask for. This is the reachability
+      # that was flaky, now measured against something on the pod's own bridge instead of GitHub.
+      - "for n in node1 node2 node3 node4; do vagrant ssh $n -c 'curl -fsS --max-time 15 -o /dev/null http://192.168.56.1:8080/get.k3s.io && curl -fsS --max-time 60 -o /dev/null http://192.168.56.1:8080/k3s-io/k3s/releases/download/v1.36.2%2Bk3s1/k3s && echo PREFLIGHT_OK || echo PREFLIGHT_FAIL' < /dev/null; done"
       # Not a pipe, and not go's exit code: a failing go test has to leave its log behind for the greps.
       # A stalled SSH session can park a test forever (x/crypto has no keepalive and Config.Timeout only
       # covers the handshake), so the tier gets a deadline: a hang has to fail the step, not eat it.
@@ -75,15 +82,12 @@ steps:
       # package, which is how a run that never passed TestDeploy looked identical to one that skipped it.
       - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-1.log || true"
       - tail -n 40 /tmp/live-1.log
-      # One retry, after a cooldown, for the tier's only external dependency: the guests fetch a pinned k3s
-      # release from GitHub four at a time, and that dependency is flaky rather than broken. Pipeline 306 is
-      # the shape of it: the pre-flight fetch failed, attempt one passed TestDeploy (37.99s, four real
-      # installs) and failed TestRollout twice with [ERROR] Download failed, and a hand-run fetch of the same
-      # URL by the same guest in the same pod minutes later got a 302 over a clean TLS handshake. The retry,
-      # on a warm lab, passed both - and TestDeploy no-opping in 2.45s on the second attempt is the
-      # idempotency the tier is meant to prove anyway. Only specs that failed run again, because a spec that
-      # failed never had its hash written. Pipeline 308 was the same shape the other way round: attempt one
-      # failed both tests, the retry passed both (11.06s and 68.68s).
+      # One retry, after a cooldown, because a red live lane is expensive to diagnose from one log: attempt
+      # two runs against a lab that attempt one already half-installed, which is a different failure to look
+      # at. It also exercises idempotency, which is the thing the tier is meant to prove - 306's second
+      # attempt no-opped TestDeploy in 2.45s, 308's in 2.60s. Only specs that failed run again, because a
+      # spec that failed never had its hash written. 310 failed TestRollout on both attempts, from a
+      # 192.168.56.12 k3s install whose download GitHub refused; that is what the mirror above is for.
       - "grep -q -- '--- PASS: TestDeploy' /tmp/live-1.log && grep -q -- '--- PASS: TestRollout' /tmp/live-1.log || { sleep 30; go test -count=1 -v -timeout 10m -run 'TestDeploy$|TestRollout$' ./... > /tmp/live-2.log 2>&1 || true; }"
       - "grep -E -- '^(=== RUN|--- (PASS|FAIL|SKIP)|ok |FAIL|panic)' /tmp/live-2.log || true"
       - tail -n 40 /tmp/live-2.log

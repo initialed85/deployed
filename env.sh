@@ -193,6 +193,30 @@ vagrant_up() {
 	fi
 }
 
+start_k3s_mirror() {
+	# tools/mirror serves the pinned k3s release on the private net, so the live tier is not four guests each
+	# pulling 81 MB from GitHub at the same instant. The guest scripts probe it and fall back to GitHub when
+	# nothing answers, which is what a lab brought up without this file looks like.
+	pkill -f '^/tmp/deployed-k3s-mirror' 2>/dev/null || true
+	if ! go build -o /tmp/deployed-k3s-mirror ./tools/mirror; then
+		echo "env.sh: could not build the k3s mirror; the live tier will fetch k3s from GitHub" >&2
+		return 0
+	fi
+	(/tmp/deployed-k3s-mirror > /tmp/deployed-k3s-mirror.log 2>&1 &)
+	for _ in $(seq 1 60); do
+		if grep -q MIRROR_READY /tmp/deployed-k3s-mirror.log 2>/dev/null; then
+			return 0
+		fi
+		sleep 1
+	done
+	echo "env.sh: the k3s mirror is not serving; the live tier will fetch k3s from GitHub" >&2
+	return 0
+}
+
+stop_k3s_mirror() {
+	pkill -f '^/tmp/deployed-k3s-mirror' 2>/dev/null || true
+}
+
 #
 # commands
 #
@@ -214,12 +238,15 @@ cmd_up() {
 		vagrant_up
 	fi
 
+	start_k3s_mirror
+
 	echo "env.sh: taking initial snapshot"
 	cmd_snapshot
 }
 
 cmd_down() {
 	require_vagrant
+	stop_k3s_mirror
 	if [[ "$provider" == "qemu" ]]; then
 		vagrant destroy -f --parallel
 	else
