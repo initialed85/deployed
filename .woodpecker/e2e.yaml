@@ -66,13 +66,15 @@ steps:
       # stdin is the pipe the step script itself arrived on, so anything that reads it gets a slice of
       # the rest of the script. vagrant shells out to ssh, which reads stdin.
       - vagrant up --provider=libvirt < /dev/null
-      # vagrant up returns when a guest answers SSH, not when it has finished booting, and the difference cost
-      # two red attempts. On 312 and 314 attempt one, the master guest pulled the hash and the 81 MB binary
-      # from the mirror, verified, installed, made the symlinks, killall, uninstall and the .env file - in about
-      # a second - and then died on the next installer step, the systemd one, with nothing on stderr. Thirty
-      # seconds later the same script worked on the same guest. is-system-running is the thing that says whether
-      # systemd is still taking jobs, so wait for it on every guest before pointing a test at one.
-      - "for n in node1 node2 node3 node4; do vagrant ssh $n -c 's=starting; for i in $(seq 1 30); do s=$(systemctl is-system-running 2>/dev/null || true); case $s in running|degraded) break;; esac; sleep 2; done; echo SYSTEMD_STATE $s' < /dev/null; done"
+      # vagrant up returns when a guest answers SSH, not when it has finished booting, and the difference is the
+      # last flake left in this lane. On attempt one of 314 and 318 the master guest did everything the
+      # installer asks of a mirror - hash, 81 MB binary, verify, install, symlinks, killall, uninstall, the
+      # systemd .env file - and then exited 1 with nothing on stderr, between the .env file and the service
+      # file; 30 seconds later the same script on the same guest worked, and TestRollout installed the same
+      # spec in the same run minutes later without complaint. An earlier version of this gate waited for
+      # is-system-running, which answered degraded at once in both runs and proved nothing: list-jobs is the
+      # thing that says systemd has stopped taking jobs.
+      - "for n in node1 node2 node3 node4; do vagrant ssh $n -c 'j=unknown; for i in $(seq 1 30); do j=$(systemctl list-jobs 2>/dev/null || true); [ \"$j\" = \"No jobs running.\" ] && break; sleep 2; done; echo BOOT_JOBS $j' < /dev/null; done"
       - virsh -c qemu:///system list --all
       # Started here rather than by env.sh, which this lane does not use: the mirror binds 192.168.56.1, an
       # address that only exists once vagrant has built the private net. Backgrounded in the same shell the
